@@ -9,6 +9,18 @@ use crate::node::*;
 type BtreeLevel = usize;
 type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
 
+macro_rules! r {
+    ($node: expr) => {
+        (*$node).borrow()
+    }
+}
+
+macro_rules! w {
+    ($node: expr) => {
+        (*$node).borrow_mut()
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub enum BtreeMapOp {
     #[default]
@@ -379,21 +391,167 @@ impl<'a, K, V> BtreeMap<'a, K, V>
     }
 
     fn op_split(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
+        let node = path.get_nonroot_node(level);
+        let right = path.get_sib_node(level);
+        let nchild = r!(node).get_nchild();
+        let mut mv = false;
+
+        let mut n = (nchild + 1) / 2;
+        if n > nchild - path.get_index(level) {
+            n -= 1;
+            mv = true;
+        }
+
+        let node_ref = &r!(node);
+        let right_ref = &r!(right);
+        BtreeNode::move_right(node_ref, right_ref, n);
+
+        if mv {
+            let idx = path.get_index(level) - r!(node).get_nchild();
+            path.set_index(level, idx);
+
+            *key = r!(right).get_key(0);
+            *val = path.get_new_seq(level).into();
+
+            let sib_node = path.get_sib_node(level);
+            path.set_nonroot_node(level, sib_node);
+            path.set_sib_node_none(level);
+        } else {
+            self.op_insert(path, level, key, val);
+
+            *key = r!(right).get_key(0);
+            *val = path.get_new_seq(level).into();
+
+            path.set_sib_node_none(level);
+        }
+
+        path.set_index(level + 1, path.get_index(level + 1) + 1);
     }
 
     fn op_carry_left(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
+        let node = path.get_nonroot_node(level);
+        let left = path.get_sib_node(level);
+        let nchild = r!(node).get_nchild();
+        let lnchild = r!(left).get_nchild();
+        let mut mv = false;
+
+        let mut n = (nchild + lnchild + 1) / 2 - lnchild;
+        if n > path.get_index(level) {
+            n -= 1;
+            mv = true;
+        }
+
+        let node_ref = &r!(node);
+        let left_ref = &r!(left);
+        BtreeNode::move_left(left_ref, node_ref, n);
+
+        let node_key = r!(node).get_key(0);
+        self.promote_key(path, level + 1, &node_key);
+
+        if mv {
+            let sib_node = path.get_sib_node(level);
+            path.set_sib_node(level, sib_node);
+            path.set_sib_node_none(level);
+            path.set_index(level, path.get_index(level) + lnchild);
+            path.set_index(level + 1, path.get_index(level + 1) - 1);
+        } else {
+            path.set_sib_node_none(level);
+            path.set_index(level, path.get_index(level) - n);
+        }
+
+        self.op_insert(path, level, key, val);
     }
 
     fn op_carry_right(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
+        let node = path.get_nonroot_node(level);
+        let right = path.get_sib_node(level);
+        let nchild = r!(node).get_nchild();
+        let rnchild = r!(right).get_nchild();
+        let mut mv = false;
+
+        let mut n = (nchild + rnchild + 1) / 2 - rnchild;
+        if n > nchild - path.get_index(level) {
+            n -= 1;
+            mv = true;
+        }
+
+        let node_ref = &r!(node);
+        let right_ref = &r!(right);
+        BtreeNode::move_right(node_ref, right_ref, n);
+
+        path.set_index(level + 1, path.get_index(level + 1) + 1);
+        let node_key = r!(right).get_key(0);
+        self.promote_key(path, level + 1, &node_key);
+        path.set_index(level + 1, path.get_index(level + 1) - 1);
+
+        if mv {
+            let sib_node = path.get_sib_node(level);
+            path.set_sib_node(level, sib_node);
+            path.set_sib_node_none(level);
+            path.set_index(level, path.get_index(level) - nchild);
+            path.set_index(level + 1, path.get_index(level + 1) - 1);
+        } else {
+            path.set_sib_node_none(level);
+        }
+
+        self.op_insert(path, level, key, val);
     }
 
     fn op_borrow_left(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
+        self.op_delete(path, level, key, val);
+
+        let node = path.get_nonroot_node(level);
+        let left = path.get_sib_node(level);
+        let nchild = r!(node).get_nchild();
+        let lnchild = r!(left).get_nchild();
+
+        let mut n = (nchild + lnchild) / 2 - nchild;
+
+        let node_ref = &r!(node);
+        let left_ref = &r!(left);
+        BtreeNode::move_right(left_ref, node_ref, n);
+
+        let node_key = r!(node).get_key(0);
+        self.promote_key(path, level + 1, &node_key);
+
+        path.set_sib_node_none(level);
+        path.set_index(level, path.get_index(level) + n);
     }
 
     fn op_borrow_right(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
+        self.op_delete(path, level, key, val);
+
+        let node = path.get_nonroot_node(level);
+        let right = path.get_sib_node(level);
+        let nchild = r!(node).get_nchild();
+        let rnchild = r!(right).get_nchild();
+
+        let mut n = (nchild + rnchild) / 2 - nchild;
+
+        let node_ref = &r!(node);
+        let right_ref = &r!(right);
+        BtreeNode::move_left(right_ref, node_ref, n);
+
+        path.set_index(level + 1, path.get_index(level + 1) + 1);
+        let node_key = r!(right).get_key(0);
+        self.promote_key(path, level + 1, &node_key);
+        path.set_index(level + 1, path.get_index(level + 1) - 1);
+
+        path.set_sib_node_none(level);
     }
 
     fn op_delete(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
+        if self.is_nonroot_level(level) {
+            let node = path.get_nonroot_node(level);
+            w!(node).delete(path.get_index(level), key, val);
+            if path.get_index(level) == 0 {
+                let node_key = r!(node).get_key(0);
+                self.promote_key(path, level + 1, &node_key);
+            }
+        } else {
+            let root = self.get_root_node();
+            w!(root).delete(path.get_index(level), key, val);
+        }
     }
 
     fn op_nop(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
