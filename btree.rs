@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::cell::RefCell;
-use std::ops::Deref;
+use std::rc::Rc;
+use std::ops::{Deref, DerefMut};
 use std::borrow::{Borrow, BorrowMut};
 use tokio::io::{Error, ErrorKind, Result};
 use crate::node::*;
 
 type BtreeLevel = usize;
+type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub enum BtreeMapOp {
@@ -26,8 +28,8 @@ pub enum BtreeMapOp {
 
 //#[derive(Clone)]
 struct BtreePathLevel<'a, K, V> {
-    node: Option<&'a mut BtreeNode<'a, K, V>>,
-    sib_node: Option<&'a mut BtreeNode<'a, K, V>>,
+    node: Option<BtreeNodeRef<'a, K, V>>,
+    sib_node: Option<BtreeNodeRef<'a, K, V>>,
     index: usize,
     oldseq: K,
     newseq: K,
@@ -38,7 +40,8 @@ pub struct BtreePath<'a, K, V> {
     levels: Vec<RefCell<BtreePathLevel<'a, K, V>>>,
 }
 
-impl<'a, K: Default + Copy, V> BtreePath<'a, K, V> {
+impl<'a, K: Default + Copy, V> BtreePath<'a, K, V>
+{
     pub fn new() -> Self {
         let mut l = Vec::new();
         for _ in 0..BTREE_NODE_LEVEL_MAX {
@@ -65,30 +68,24 @@ impl<'a, K: Default + Copy, V> BtreePath<'a, K, V> {
         self.levels[level].borrow_mut().index = index;
     }
 
-    /*
-    pub fn get_nonroot_node(&self, level: usize) -> &BtreeNode<K, V> {
-        self.levels[level].borrow().node.unwrap()
-    }
-    */
-
-    pub fn get_nonroot_node_mut(&'a self, level: usize) -> &mut BtreeNode<K, V> {
-        self.levels[level].borrow_mut().node.take().unwrap()
+    pub fn get_nonroot_node(&self, level: usize) -> BtreeNodeRef<'a, K, V> {
+        self.levels[level].borrow_mut().node.as_mut().unwrap().clone()
     }
 
-    pub fn set_nonroot_node(&self, level: usize, node: &'a mut BtreeNode<'a, K, V>) {
+    pub fn set_nonroot_node(&self, level: usize, node: BtreeNodeRef<'a, K, V>) {
         self.levels[level].borrow_mut().node = Some(node);
     }
 
-    pub fn get_sib_node(&self, level: usize) -> &BtreeNode<K, V> {
-        self.levels[level].borrow_mut().sib_node.take().unwrap()
+    pub fn get_sib_node(&self, level: usize) -> BtreeNodeRef<'a, K, V> {
+        self.levels[level].borrow_mut().sib_node.as_ref().unwrap().clone()
     }
 
-    pub fn get_sib_node_mut(&'a self, level: usize) -> &mut BtreeNode<K, V> {
-        self.levels[level].borrow_mut().sib_node.take().unwrap()
-    }
-
-    pub fn set_sib_node(&self, level: usize, node: &'a mut BtreeNode<'a, K, V>) {
+    pub fn set_sib_node(&self, level: usize, node: BtreeNodeRef<'a, K, V>) {
         self.levels[level].borrow_mut().sib_node = Some(node);
+    }
+
+    pub fn set_sib_node_none(&self, level: usize) {
+        self.levels[level].borrow_mut().sib_node = None;
     }
 
     pub fn get_new_seq(&self, level: usize) -> K {
@@ -110,8 +107,8 @@ impl<'a, K: Default + Copy, V> BtreePath<'a, K, V> {
 
 pub struct BtreeMap<'a, K, V> {
     pub data: Vec<u8>,
-    pub root: RefCell<BtreeNode<'a, K, V>>,
-    pub nodes: HashMap<K, BtreeNode<'a, K, V>>, // list of btree node in memory
+    pub root: BtreeNodeRef<'a, K, V>,
+    pub nodes: HashMap<K, BtreeNodeRef<'a, K, V>>, // list of btree node in memory
     pub nchild_max: usize,
     pub last_seq: RefCell<K>,
 }
@@ -122,32 +119,28 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         V: Copy + From<K>,
         K: From<V>
 {
-    /*
     #[inline]
-    fn get_root_node(&self) -> &BtreeNode<K, V> {
-        &self.root
+    fn get_root_node(&self) -> BtreeNodeRef<'a, K, V> {
+        self.root.clone()
     }
-    */
 
     #[inline]
     fn get_root_level(&self) -> usize {
-        self.root.borrow().get_level()
+        (*self.root).borrow().get_level()
     }
 
     #[inline]
     fn get_height(&self) -> usize {
-        self.root.borrow().get_level() + 1
+        (*self.root).borrow().get_level() + 1
     }
 
-    /*
     #[inline]
-    fn get_node(&'a self, path: &'a BtreePath<'a, K, V>, level: usize) -> &BtreeNode<'a, K, V> {
+    fn get_node<'s>(&'s self, path: &'s BtreePath<'a, K, V>, level: usize) -> BtreeNodeRef<'a, K, V> {
         if level == self.get_height() - 1 {
             return self.get_root_node();
         }
         path.get_nonroot_node(level)
     }
-    */
 
     #[inline]
     fn is_root_level(&self, level: usize) -> bool {
@@ -173,9 +166,10 @@ impl<'a, K, V> BtreeMap<'a, K, V>
     }
 
     // FIXME
-    async fn get_from_nodes(&self, key: K) -> Result<&mut BtreeNode<K, V>> {
-        Err(Error::new(ErrorKind::NotFound, ""))
-        //Ok(self.nodes.get(&key).unwrap())
+    async fn get_from_nodes(&self, key: K) -> Result<BtreeNodeRef<'a, K, V>> {
+        let mut clone = self.nodes.get(&key).unwrap().clone();
+        Ok(clone)
+        //Err(Error::new(ErrorKind::NotFound, ""))
     }
 
     async fn get_new_node(&self) -> Result<&BtreeNode<K, V>> {
@@ -197,15 +191,16 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         }
     }
 
-    async fn do_lookup<'t, 's: 't>(&'s self, path: &BtreePath<'t, K, V>, key: &K, minlevel: usize) -> Result<V> {
-        let mut level = self.root.borrow().get_level();
+    async fn do_lookup<'s>(&'s self, path: &'s BtreePath<'a, K, V>, key: &K, minlevel: usize) -> Result<V> {
+        let root = self.get_root_node();
+        let mut level = (*root).borrow().get_level();
         if level < minlevel {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
 
-        let (mut found, mut index) = self.root.borrow().lookup(key);
+        let (mut found, mut index) = (*root).borrow().lookup(key);
         assert!(found == false);
-        let mut value = self.root.borrow().get_val(index);
+        let mut value = (*root).borrow().get_val(index);
 
         path.set_index(level, index);
 
@@ -214,12 +209,12 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             let node = self.get_from_nodes(value.into()).await?;
 
             if !found {
-                (found, index) = node.lookup(key);
+                (found, index) = (*node).borrow().lookup(key);
             } else {
                 index = 0;
             }
 
-            value = node.get_val(index);
+            value = (*node).borrow().get_val(index);
             path.set_nonroot_node(level, node);
             path.set_index(level, index);
             level -= 1;
@@ -232,35 +227,27 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         Ok(value)
     }
 
-    async fn prepare_insert<'t, 's: 't>(&'s self, path: &BtreePath<'t, K, V>, key: &K) -> Result<BtreeLevel> {
+    async fn prepare_insert<'s>(&'s self, path: &'s BtreePath<'a, K, V>, key: &K) -> Result<BtreeLevel> {
 
         let mut level = BTREE_NODE_LEVEL_DATA;
 
         // go through all non leap levels
         for level in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
-            let borrow = path.levels[level].borrow();
-            let node = borrow.node.as_ref().unwrap();
-            if node.has_free_slots() {
+            let node = path.get_nonroot_node(level);
+            if (*node).borrow().has_free_slots() {
                 path.set_op(level, BtreeMapOp::Insert);
                 return Ok(level);
             }
 
             // if no free slots found at this level, we check parent
-            let mut root_borrow = self.root.borrow_mut();
-            let borrow;
-            let parent = if level + 1 == self.get_height() - 1 {
-                root_borrow.deref()
-            } else {
-                borrow = path.levels[level + 1].borrow();
-                borrow.node.as_ref().unwrap()
-            };
+            let parent = self.get_node(path, level + 1);
             let pindex = path.get_index(level + 1);
 
             // left sibling
             if pindex > 0 {
-                let sib_val = parent.get_val(pindex - 1);
+                let sib_val = (*parent).borrow().get_val(pindex - 1);
                 let sib_node = self.get_from_nodes(sib_val.into()).await?;
-                if sib_node.has_free_slots() {
+                if (*sib_node).borrow().has_free_slots() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::CarryLeft);
                     return Ok(level);
@@ -268,10 +255,10 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             }
 
             // right sibling
-            if pindex < parent.get_nchild() - 1 {
-                let sib_val = parent.get_val(pindex + 1);
+            if pindex < (*parent).borrow().get_nchild() - 1 {
+                let sib_val = (*parent).borrow().get_val(pindex + 1);
                 let sib_node = self.get_from_nodes(sib_val.into()).await?;
-                if sib_node.has_free_slots() {
+                if (*sib_node).borrow().has_free_slots() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::CarryRight);
                     return Ok(level);
@@ -283,7 +270,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             // prepare a new node and split myself
             let seq = self.prepare_seq(path, level);
             let node = self.get_from_nodes(seq).await?;
-            node.init(0, level, 0);
+            (*node).borrow_mut().init(0, level, 0);
             path.set_sib_node(level, node);
             path.set_op(level, BtreeMapOp::Split);
         }
@@ -291,7 +278,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         level += 1;
 
         // root node
-        if self.root.borrow().has_free_slots() {
+        let root = self.get_root_node();
+        if (*root).borrow().has_free_slots() {
             path.set_op(level, BtreeMapOp::Insert);
             return Ok(level);
         }
@@ -299,7 +287,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         // grow
         let seq = self.prepare_seq(path, level);
         let node = self.get_from_nodes(seq).await?;
-        node.init(0, level, 0);
+        (*node).borrow_mut().init(0, level, 0);
         path.set_sib_node(level, node);
         path.set_op(level, BtreeMapOp::Grow);
 
@@ -325,9 +313,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             loop {
                 let index = path.get_index(level);
                 // get node @ level
-                let mut borrow = path.levels[level].borrow_mut();
-                let node = borrow.node.as_mut().unwrap();
-                node.set_key(index, key);
+                let node = path.get_nonroot_node(level);
+                (*node).borrow_mut().set_key(index, key);
 
                 level += 1;
                 if index != 0 || self.is_root_level(level) {
@@ -337,7 +324,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         }
 
         if self.is_root_level(level) {
-            self.root.borrow_mut().set_key(path.get_index(level), key);
+            let root = self.get_root_node();
+            (*root).borrow_mut().set_key(path.get_index(level), key);
         }
     }
 }
@@ -353,39 +341,40 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         let index = path.get_index(level);
         if self.is_nonroot_level(level) {
             // non root node
-            let mut borrow = path.levels[level].borrow_mut();
-            let node = borrow.node.as_mut().unwrap();
-            let node_key = node.get_key(0);
+            let node = path.get_nonroot_node(level);
+            let node_key = (*node).borrow().get_key(0);
 
-            node.insert(index, key, val);
+            (*node).borrow_mut().insert(index, key, val);
 
             if index == 0 {
                 self.promote_key(path, level + 1, &node_key);
             }
         } else {
             // root node
-            self.root.borrow_mut().insert(index, key, val);
+            let root = self.get_root_node();
+            (*root).borrow_mut().insert(index, key, val);
         }
     }
 
     fn op_grow(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
         let child = path.get_sib_node(level);
-        let root_borrow = self.root.borrow();
-        let root = root_borrow.deref();
+        let root = self.get_root_node();
 
-        let n = root.get_nchild();
+        let n = (*root).borrow().get_nchild();
 
-        self.root.borrow_mut().set_level(level + 1);
+        (*root).borrow_mut().set_level(level + 1);
 
-        let sib_node = path.levels[level].borrow_mut().sib_node.take();
-        path.levels[level].borrow_mut().node = sib_node;
-        path.levels[level].borrow_mut().sib_node = None;
+        let sib_node = path.get_sib_node(level);
+        path.set_nonroot_node(level, sib_node);
+        path.set_sib_node_none(level);
 
         self.op_insert(path, level, key, val);
 
-        BtreeNode::move_right(&root, child, n);
+        let root_ref = &(*root).borrow();
+        let child_ref = &(*child).borrow();
+        BtreeNode::move_right(root_ref, child_ref, n);
 
-        *key = child.get_key(0);
+        *key = (*child).borrow().get_key(0);
         *val = path.get_new_seq(level).into();
     }
 
@@ -424,7 +413,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         Self {
             data: data,
-            root: RefCell::new(root),
+            root: Rc::new(RefCell::new(root)),
             nodes: list,
             nchild_max: 32,
             last_seq: RefCell::new(K::default()),
