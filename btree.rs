@@ -88,6 +88,10 @@ impl<'a, K: Default + Copy, V> BtreePath<'a, K, V>
         self.levels[level].borrow_mut().node = Some(node);
     }
 
+    pub fn set_nonroot_node_none(&self, level: usize) {
+        self.levels[level].borrow_mut().node = None;
+    }
+
     pub fn get_sib_node(&self, level: usize) -> BtreeNodeRef<'a, K, V> {
         self.levels[level].borrow_mut().sib_node.as_ref().unwrap().clone()
     }
@@ -128,7 +132,7 @@ pub struct BtreeMap<'a, K, V> {
 impl<'a, K, V> BtreeMap<'a, K, V>
     where
         K: Copy + Default + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + From<K>,
+        V: Copy + Default + From<K>,
         K: From<V>
 {
     #[inline]
@@ -195,9 +199,12 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             BtreeMapOp::Split => self.op_split(path, level, key, val),
             BtreeMapOp::CarryLeft => self.op_carry_left(path, level, key, val),
             BtreeMapOp::CarryRight => self.op_carry_right(path, level, key, val),
+            BtreeMapOp::ConcatLeft => self.op_concat_left(path, level, key, val),
+            BtreeMapOp::ConcatRight => self.op_concat_right(path, level, key, val),
             BtreeMapOp::BorrowLeft => self.op_borrow_left(path, level, key, val),
             BtreeMapOp::BorrowRight => self.op_borrow_right(path, level, key, val),
             BtreeMapOp::Delete => self.op_delete(path, level, key, val),
+            BtreeMapOp::Shrink => self.op_shink(path, level, key, val),
             BtreeMapOp::Nop => self.op_nop(path, level, key, val),
             _ => panic!("{:?} not yet implement", path.get_op(level)),
         }
@@ -346,7 +353,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 impl<'a, K, V> BtreeMap<'a, K, V>
     where
         K: Copy + Default + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + From<K>,
+        V: Copy + Default + From<K>,
         K: From<V>
 {
     fn op_insert(&self, path: &BtreePath<'_, K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
@@ -497,6 +504,40 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         self.op_insert(path, level, key, val);
     }
 
+    fn op_concat_left(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
+        self.op_delete(path, level, key, val);
+
+        let node = path.get_nonroot_node(level);
+        let left = path.get_sib_node(level);
+
+        let n = r!(node).get_nchild();
+
+        let node_ref = &r!(node);
+        let left_ref = &r!(left);
+        BtreeNode::move_right(node_ref, left_ref, n);
+
+        let sib_node = path.get_sib_node(level);
+        path.set_nonroot_node(level, sib_node);
+        path.set_sib_node_none(level);
+        path.set_index(level, path.get_index(level) + r!(left).get_nchild());
+    }
+
+    fn op_concat_right(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
+        self.op_delete(path, level, key, val);
+
+        let node = path.get_nonroot_node(level);
+        let right = path.get_sib_node(level);
+
+        let n = r!(node).get_nchild();
+
+        let node_ref = &r!(node);
+        let right_ref = &r!(right);
+        BtreeNode::move_left(node_ref, right_ref, n);
+
+        path.set_sib_node_none(level);
+        path.set_index(level + 1, path.get_index(level + 1) + 1);
+    }
+
     fn op_borrow_left(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
         self.op_delete(path, level, key, val);
 
@@ -554,6 +595,24 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         }
     }
 
+    fn op_shink(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
+        self.op_delete(path, level, key, val);
+
+        let root = self.get_root_node();
+        let child = path.get_nonroot_node(level);
+
+        let mut _key = K::default();
+        let mut _val = V::default();
+        w!(root).delete(0, &mut _key, &mut _val);
+        w!(root).set_level(level);
+        let n = r!(child).get_nchild();
+        let root_ref = &r!(root);
+        let child_ref = &r!(child);
+        BtreeNode::move_left(root_ref, child_ref, n);
+
+        path.set_nonroot_node_none(level);
+    }
+
     fn op_nop(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
     }
 }
@@ -562,7 +621,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 impl<'a, K, V> BtreeMap<'a, K, V>
     where
         K: Copy + Default + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + From<K>,
+        V: Copy + Default + From<K>,
         K: From<V>
 {
     pub fn new(data: Vec<u8>) -> Self {
