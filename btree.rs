@@ -112,6 +112,14 @@ impl<'a, K: Default + Copy, V> BtreePath<'a, K, V>
         self.levels[level].borrow_mut().newseq = seq;
     }
 
+    pub fn get_old_seq(&self, level: usize) -> K {
+        self.levels[level].borrow().oldseq
+    }
+
+    pub fn set_old_seq(&self, level: usize, seq: K) {
+        self.levels[level].borrow_mut().oldseq = seq;
+    }
+
     pub fn get_op(&self, level: usize) -> BtreeMapOp {
         self.levels[level].borrow().op
     }
@@ -323,6 +331,81 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         for level in BTREE_NODE_LEVEL_MIN..=maxlevel {
             self.do_op(path, level, &mut _key, &mut _val);
+        }
+    }
+
+    async fn prepare_delete<'s>(&'s self, path: &'s BtreePath<'a, K, V>) -> Result<BtreeLevel> {
+        let mut level = BTREE_NODE_LEVEL_MIN;
+        let mut dindex = path.get_index(level);
+        for mut level in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
+            dindex = path.get_index(level);
+            let node = path.get_nonroot_node(level);
+            path.set_old_seq(level, r!(node).get_val(dindex).into());
+
+            if r!(node).is_overflowing() {
+                path.set_op(level, BtreeMapOp::Delete);
+                return Ok(level);
+            }
+
+            let parent = self.get_node(path, level + 1);
+            let pindex = path.get_index(level + 1);
+            dindex = pindex;
+
+            // left sibling
+            if pindex > 0 {
+                let sib_val = r!(parent).get_val(pindex - 1);
+                let sib_node = self.get_from_nodes(sib_val.into()).await?;
+                if r!(sib_node).is_overflowing() {
+                    path.set_sib_node(level, sib_node);
+                    path.set_op(level, BtreeMapOp::BorrowLeft);
+                    return Ok(level);
+                } else {
+                    path.set_sib_node(level, sib_node);
+                    path.set_op(level, BtreeMapOp::ConcatLeft);
+                }
+            } else if pindex < r!(parent).get_nchild() - 1 {
+                // right sibling
+                let sib_val = r!(parent).get_val(pindex + 1);
+                let sib_node = self.get_from_nodes(sib_val.into()).await?;
+                if r!(sib_node).is_overflowing() {
+                    path.set_sib_node(level, sib_node);
+                    path.set_op(level, BtreeMapOp::BorrowRight);
+                    return Ok(level);
+                } else {
+                    path.set_sib_node(level, sib_node);
+                    path.set_op(level, BtreeMapOp::ConcatRight);
+                    dindex = pindex + 1;
+                }
+            } else {
+                // no siblings, the only child of the root node
+                if r!(node).get_nchild() - 1 <= r!(self.get_root_node()).get_capacity() {
+                    path.set_op(level, BtreeMapOp::Shrink);
+                    level += 1;
+                    path.set_op(level, BtreeMapOp::Nop);
+                    // shrink root child
+                    let root = self.get_root_node();
+                    path.set_old_seq(level, r!(root).get_val(dindex).into());
+                    return Ok(level);
+                } else {
+                    path.set_op(level, BtreeMapOp::Delete);
+                    return Ok(level);
+                }
+            }
+        }
+        // child of the root node is deleted
+        path.set_op(level, BtreeMapOp::Delete);
+
+        // shrink root child
+        let root = self.get_root_node();
+        path.set_old_seq(level, r!(root).get_val(dindex).into());
+        Ok(level)
+    }
+
+    fn commit_delete(&self, path: &BtreePath<'_, K, V>, maxlevel: BtreeLevel) {
+        let mut key: K = K::default();
+        let mut val: V = V::default();
+        for level in BTREE_NODE_LEVEL_MIN..=maxlevel {
+            self.do_op(path, level, &mut key, &mut val);
         }
     }
 
