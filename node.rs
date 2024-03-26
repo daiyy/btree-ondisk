@@ -122,13 +122,23 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn get_capapcity(&self) -> usize {
+    pub fn get_capacity(&self) -> usize {
         self.capacity
     }
 
     #[inline]
     pub fn has_free_slots(&self) -> bool {
         self.get_nchild() < self.capacity
+    }
+
+    #[inline]
+    pub fn get_nchild_min(&self) -> usize {
+        (self.capacity - 1) / 2 + 1
+    }
+
+    #[inline]
+    pub fn is_overflowing(&self) -> bool {
+        self.get_nchild() > self.get_nchild_min()
     }
 
     #[inline]
