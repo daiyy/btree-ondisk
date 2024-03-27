@@ -52,6 +52,11 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         }
     }
 
+    fn is_key_exceed(&self, key: K) -> bool {
+        let index = key.into() as usize;
+        index >= self.root.borrow().get_capacity()
+    }
+
     async fn insert(&self, key: K, val: V) -> Result<()> {
         let index = key.into() as usize;
         if index > self.root.borrow().get_capacity() {
