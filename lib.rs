@@ -5,6 +5,7 @@ pub mod ondisk;
 pub mod node;
 pub mod btree;
 mod direct;
+pub mod bmap;
 
 pub trait VMap<K, V>
     where
