@@ -133,7 +133,6 @@ pub struct BtreeMap<'a, K, V> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V>,
     pub nodes: HashMap<K, BtreeNodeRef<'a, K, V>>, // list of btree node in memory
-    pub nchild_max: usize,
     pub last_seq: RefCell<K>,
 }
 
@@ -757,7 +756,6 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             data: data,
             root: Rc::new(RefCell::new(root)),
             nodes: list,
-            nchild_max: 32,
             last_seq: RefCell::new(K::default()),
         }
     }
