@@ -430,6 +430,24 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             (*root).borrow_mut().set_key(path.get_index(level), key);
         }
     }
+
+    fn get_next_key(&self, path: &BtreePath<'a, K, V>, minlevel: BtreeLevel, start: &K) -> Result<K> {
+        let mut next_adj = 0;
+        let maxlevel = self.get_height() - 1;
+        for level in minlevel..=maxlevel {
+            let node = if level == maxlevel {
+                self.get_root_node()
+            } else {
+                path.get_nonroot_node(level)
+            };
+            let index = path.get_index(level) + next_adj;
+            if index < r!(node).get_nchild() {
+                return Ok(r!(node).get_key(index));
+            }
+            next_adj = 1;
+        }
+        Err(Error::new(ErrorKind::NotFound, ""))
+    }
 }
 
 // all op_* functions
@@ -750,5 +768,20 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         let level = self.prepare_delete(&path).await?;
         self.commit_delete(&path, level);
         Ok(())
+    }
+
+    pub async fn seek_key(&self, start: K) -> Result<K> {
+        let path = BtreePath::new();
+        match self.do_lookup(&path, &start, BTREE_NODE_LEVEL_MIN).await {
+            Ok(_) => {
+                return Ok(start);
+            },
+            Err(e) => {
+                if e.kind() == ErrorKind::NotFound {
+                   return self.get_next_key(&path, BTREE_NODE_LEVEL_MIN, &start);
+                }
+                return Err(e);
+            }
+        }
     }
 }
