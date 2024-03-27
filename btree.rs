@@ -254,6 +254,30 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         Ok(value)
     }
 
+    async fn do_lookup_last<'s>(&'s self, path: &'s BtreePath<'a, K, V>) -> Result<K> {
+        let mut node = self.get_root_node();
+        let mut index = r!(node).get_nchild() - 1;
+        if index < 0 {
+            return Err(Error::new(ErrorKind::NotFound, ""));
+        }
+        let mut level = r!(node).get_level();
+        let mut value = r!(node).get_val(index);
+        path.set_nonroot_node_none(level);
+        path.set_index(level, index);
+
+        level -= 1;
+        while level > 0 {
+            let node = self.get_from_nodes(value.into()).await?;
+            index = r!(node).get_nchild() - 1;
+            value = r!(node).get_val(index);
+            path.set_nonroot_node(level, node);
+            path.set_index(level, index);
+            level -= 1;
+        }
+        let key = r!(node).get_key(index);
+        Ok(key)
+    }
+
     async fn prepare_insert<'s>(&'s self, path: &'s BtreePath<'a, K, V>, key: &K) -> Result<BtreeLevel> {
 
         let mut level = BTREE_NODE_LEVEL_DATA;
@@ -783,5 +807,10 @@ impl<'a, K, V> BtreeMap<'a, K, V>
                 return Err(e);
             }
         }
+    }
+
+    pub async fn last_key(&self) -> Result<K> {
+        let path = BtreePath::new();
+        self.do_lookup_last(&path).await
     }
 }
