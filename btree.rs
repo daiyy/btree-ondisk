@@ -739,4 +739,16 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         self.commit_insert(&path, key, val, level);
         Ok(())
     }
+
+    pub async fn delete(&self, key: K) -> Result<()> {
+        let path = BtreePath::new();
+        match self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN).await {
+            Ok(_) => {}, // do nothing if found
+            Err(e) => { return Err(e); }, // return any errors
+        }
+
+        let level = self.prepare_delete(&path).await?;
+        self.commit_delete(&path, level);
+        Ok(())
+    }
 }
