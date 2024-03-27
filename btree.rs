@@ -5,6 +5,7 @@ use std::ops::{Deref, DerefMut};
 use std::borrow::{Borrow, BorrowMut};
 use tokio::io::{Error, ErrorKind, Result};
 use crate::node::*;
+use crate::VMap;
 
 type BtreeLevel = usize;
 type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
@@ -742,13 +743,13 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 }
 
 // all up level api
-impl<'a, K, V> BtreeMap<'a, K, V>
+impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + From<K>,
         K: From<V>
 {
-    pub fn new(data: Vec<u8>) -> Self {
+    fn new(data: Vec<u8>) -> Self {
         let root = BtreeNode::<K, V>::new(&data);
         let mut list = HashMap::new();
 
@@ -760,7 +761,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         }
     }
 
-    pub async fn insert(&self, key: K, val: V) -> Result<()> {
+    async fn insert(&self, key: K, val: V) -> Result<()> {
         let path = BtreePath::new();
         match self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN).await {
             Ok(_) => {
@@ -780,7 +781,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         Ok(())
     }
 
-    pub async fn delete(&self, key: K) -> Result<()> {
+    async fn delete(&self, key: K) -> Result<()> {
         let path = BtreePath::new();
         match self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN).await {
             Ok(_) => {}, // do nothing if found
@@ -792,7 +793,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         Ok(())
     }
 
-    pub async fn seek_key(&self, start: K) -> Result<K> {
+    async fn seek_key(&self, start: K) -> Result<K> {
         let path = BtreePath::new();
         match self.do_lookup(&path, &start, BTREE_NODE_LEVEL_MIN).await {
             Ok(_) => {
@@ -807,7 +808,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         }
     }
 
-    pub async fn last_key(&self) -> Result<K> {
+    async fn last_key(&self) -> Result<K> {
         let path = BtreePath::new();
         self.do_lookup_last(&path).await
     }
