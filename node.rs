@@ -152,6 +152,12 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         //std::mem::transmute::<>::(ptr)
     }
 
+    #[inline]
+    pub fn init_root(&mut self, level: usize) {
+        self.header.flags = BTREE_NODE_ROOT;
+        self.set_level(level);
+    }
+
     // move n k,v pairs from head of right append to left
     // and move rest of right to it's head
     pub fn move_left(left: &BtreeNode<K, V>, right: &BtreeNode<K, V>, n: usize) {
