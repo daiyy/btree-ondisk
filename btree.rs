@@ -138,8 +138,8 @@ pub struct BtreeMap<'a, K, V> {
 
 impl<'a, K, V> BtreeMap<'a, K, V>
     where
-        K: Copy + Default + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + From<K>,
+        K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        V: Copy + Default + std::fmt::Display + From<K>,
         K: From<V>
 {
     #[inline]
@@ -476,8 +476,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 // all op_* functions
 impl<'a, K, V> BtreeMap<'a, K, V>
     where
-        K: Copy + Default + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + From<K>,
+        K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        V: Copy + Default + std::fmt::Display + From<K>,
         K: From<V>
 {
     fn op_insert(&self, path: &BtreePath<'_, K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
@@ -744,8 +744,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 // all up level api
 impl<'a, K, V> BtreeMap<'a, K, V>
     where
-        K: Copy + Default + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + From<K>,
+        K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        V: Copy + Default + std::fmt::Display + From<K>,
         K: From<V>
 {
     pub fn new(data: Vec<u8>) -> Self {
