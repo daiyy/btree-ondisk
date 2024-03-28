@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use tokio::io::Result;
 use crate::VMap;
 use crate::InvalidValue;
-use crate::direct::{DirectMap, RootNodeKeyExceed};
+use crate::direct::DirectMap;
 use crate::btree::BtreeMap;
 use crate::node::BtreeNode;
 
@@ -51,6 +51,28 @@ impl<'a, K, V> BMap<'a, K, V>
         V: Copy + Default + std::fmt::Display + From<K> + InvalidValue<V>,
         K: From<V> + Into<u64>
 {
+    async fn convert_and_insert(&mut self, data: Vec<u8>, last_seq: K, key: K, val: V) -> Result<()> {
+        // convert old root node to btree node
+        let mut btree = BtreeMap {
+            root: Rc::new(RefCell::new(BtreeNode::<K, V>::new(&data))),
+            data: data,
+            nodes: RefCell::new(HashMap::new()),
+            last_seq: RefCell::new(last_seq),
+        };
+        // insert k, v
+        let res = btree.insert(key, val).await?;
+        // modify inner
+        self.inner = NodeType::Btree(btree);
+        Ok(())
+    }
+}
+
+impl<'a, K, V> BMap<'a, K, V>
+    where
+        K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        V: Copy + Default + std::fmt::Display + From<K> + InvalidValue<V>,
+        K: From<V> + Into<u64>
+{
     pub fn new(data: Vec<u8>) -> Self {
         // start from small
         Self {
@@ -61,20 +83,11 @@ impl<'a, K, V> BMap<'a, K, V>
     pub async fn do_insert(&mut self, key: K, val: V) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                if let Some(reason) = direct.is_key_exceed(key) {
+                if direct.is_key_exceed(key) {
                     // convert and insert
                     let data = direct.data.clone();
-                    let nodes: HashMap<_, _> = direct.nodes.borrow_mut().iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
                     let last_seq = direct.last_seq.take();
-                    let mut btree = BtreeMap {
-                        root: Rc::new(RefCell::new(BtreeNode::<K, V>::new(&data))),
-                        data: data,
-                        nodes: RefCell::new(HashMap::from_iter(nodes)),
-                        last_seq: RefCell::new(last_seq),
-                    };
-                    let res = btree.insert(key, val).await?;
-                    self.inner = NodeType::Btree(btree);
-                    return Ok(res);
+                    return self.convert_and_insert(data, last_seq, key, val).await;
                 }
                 return direct.insert(key, val).await;
             },

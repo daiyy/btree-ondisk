@@ -9,11 +9,6 @@ use crate::node::*;
 
 type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
 
-pub enum RootNodeKeyExceed {
-    IndexExceedCapacity,
-    NoFreeSlots,
-}
-
 pub struct DirectMap<'a, K, V> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V>,
@@ -51,17 +46,10 @@ impl<'a, K, V> DirectMap<'a, K, V>
     }
 
     #[inline]
-    pub(crate) fn is_key_exceed(&self, key: K) -> Option<RootNodeKeyExceed> {
+    pub(crate) fn is_key_exceed(&self, key: K) -> bool {
         let index = key.into() as usize;
         // if key's index is exceeded
-        if index >= self.root.borrow().get_capacity() {
-            return Some(RootNodeKeyExceed::IndexExceedCapacity);
-        }
-        // if we still have free slots
-        if self.root.borrow().has_free_slots() {
-            return None;
-        }
-        Some(RootNodeKeyExceed::NoFreeSlots)
+        index >= self.root.borrow().get_capacity()
     }
 }
 
