@@ -147,9 +147,10 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn init(&self, flags: usize, level: usize, nchild: usize) {
-        //let ptr = self.header as *const _ as *mut BtreeNodeHeader;
-        //std::mem::transmute::<>::(ptr)
+    pub fn init(&mut self, flags: usize, level: usize, nchild: usize) {
+        self.set_flags(flags);
+        self.set_level(level);
+        self.set_nchild(nchild);
     }
 
     #[inline]
