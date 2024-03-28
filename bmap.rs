@@ -64,12 +64,12 @@ impl<'a, K, V> BMap<'a, K, V>
                 if direct.is_key_exceed(key) {
                     // convert and insert
                     let data = direct.data.clone();
-                    let nodes: HashMap<_, _> = direct.nodes.iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
+                    let nodes: HashMap<_, _> = direct.nodes.borrow_mut().iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
                     let last_seq = direct.last_seq.take();
                     let mut btree = BtreeMap {
                         root: Rc::new(RefCell::new(BtreeNode::<K, V>::new(&data))),
                         data: data,
-                        nodes: HashMap::from_iter(nodes),
+                        nodes: RefCell::new(HashMap::from_iter(nodes)),
                         last_seq: RefCell::new(last_seq),
                     };
                     let res = btree.insert(key, val).await?;

@@ -12,7 +12,7 @@ type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
 pub struct DirectMap<'a, K, V> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V>,
-    pub nodes: HashMap<K, BtreeNodeRef<'a, K, V>>, // list of btree node in memory
+    pub nodes: RefCell<HashMap<K, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
     pub last_seq: RefCell<K>,
 }
 
@@ -54,7 +54,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
 {
     fn new(data: Vec<u8>) -> Self {
         let root = BtreeNode::<K, V>::new(&data);
-        let mut list = HashMap::new();
+        let mut list = RefCell::new(HashMap::new());
 
         Self {
             data: data,

@@ -134,7 +134,7 @@ impl<'a, K: Default + Copy, V> BtreePath<'a, K, V>
 pub struct BtreeMap<'a, K, V> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V>,
-    pub nodes: HashMap<K, BtreeNodeRef<'a, K, V>>, // list of btree node in memory
+    pub nodes: RefCell<HashMap<K, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
     pub last_seq: RefCell<K>,
 }
 
@@ -144,7 +144,12 @@ impl<'a, K, V> fmt::Display for BtreeMap<'a, K, V>
         V: Copy + fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", (*self.root).borrow())
+        write!(f, "{}", (*self.root).borrow());
+        for (k, node) in self.nodes.borrow().iter() {
+            let n: Rc<RefCell<BtreeNode<'a, K, V>>> = node.clone();
+            write!(f, "{} - {}", k, (*n).borrow());
+        }
+        write!(f, "")
     }
 }
 
@@ -200,11 +205,20 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         seq
     }
 
-    // FIXME
     async fn get_from_nodes(&self, key: K) -> Result<BtreeNodeRef<'a, K, V>> {
-        let mut clone = self.nodes.get(&key).unwrap().clone();
-        Ok(clone)
-        //Err(Error::new(ErrorKind::NotFound, ""))
+        let mut list = self.nodes.borrow_mut();
+        if let Some(node) = list.get(&key) {
+            return Ok(node.clone());
+        }
+
+        // FIXME: temp allocate a new node with 4096
+        let mut v = Vec::with_capacity(4096);
+        for i in 0..4096 {
+            v.push(0);
+        }
+        let n = Rc::new(RefCell::new(BtreeNode::<K, V>::new(&v)));
+        list.insert(key, n.clone());
+        Ok(n)
     }
 
     async fn get_new_node(&self) -> Result<&BtreeNode<K, V>> {
@@ -762,7 +776,7 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
 {
     fn new(data: Vec<u8>) -> Self {
         let root = BtreeNode::<K, V>::new(&data);
-        let mut list = HashMap::new();
+        let mut list = RefCell::new(HashMap::new());
 
         Self {
             data: data,
