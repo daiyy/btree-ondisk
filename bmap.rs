@@ -1,3 +1,4 @@
+use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -13,8 +14,35 @@ pub enum NodeType<'a, K, V> {
     Btree(BtreeMap<'a, K, V>),
 }
 
+impl<'a, K, V> fmt::Display for NodeType<'a, K, V>
+    where
+        K: Copy + fmt::Display + std::cmp::PartialOrd,
+        V: Copy + fmt::Display
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            NodeType::Direct(direct) => {
+                write!(f, "{}", direct)
+            },
+            NodeType::Btree(btree) => {
+                write!(f, "{}", btree)
+            }
+        }
+    }
+}
+
 pub struct BMap<'a, K, V> {
     inner: NodeType<'a, K, V>,
+}
+
+impl<'a, K, V> fmt::Display for BMap<'a, K, V>
+    where
+        K: Copy + fmt::Display + std::cmp::PartialOrd,
+        V: Copy + fmt::Display
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.inner)
+    }
 }
 
 impl<'a, K, V> BMap<'a, K, V>

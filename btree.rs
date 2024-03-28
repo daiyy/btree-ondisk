@@ -1,3 +1,4 @@
+use std::fmt;
 use std::collections::HashMap;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -135,6 +136,16 @@ pub struct BtreeMap<'a, K, V> {
     pub root: BtreeNodeRef<'a, K, V>,
     pub nodes: HashMap<K, BtreeNodeRef<'a, K, V>>, // list of btree node in memory
     pub last_seq: RefCell<K>,
+}
+
+impl<'a, K, V> fmt::Display for BtreeMap<'a, K, V>
+    where
+        K: Copy + fmt::Display + std::cmp::PartialOrd,
+        V: Copy + fmt::Display
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", (*self.root).borrow())
+    }
 }
 
 impl<'a, K, V> BtreeMap<'a, K, V>
