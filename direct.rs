@@ -1,3 +1,4 @@
+use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -15,6 +16,16 @@ pub struct DirectMap<'a, K, V> {
     pub last_seq: RefCell<K>,
 }
 
+impl<'a, K, V> fmt::Display for DirectMap<'a, K, V>
+    where
+        K: Copy + fmt::Display + std::cmp::PartialOrd,
+        V: Copy + fmt::Display
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", (*self.root).borrow())
+    }
+}
+
 impl<'a, K, V> DirectMap<'a, K, V>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
@@ -23,8 +34,9 @@ impl<'a, K, V> DirectMap<'a, K, V>
 {
     #[inline]
     fn get_next_seq(&self) -> K {
+        let old_value = *self.last_seq.borrow();
         *self.last_seq.borrow_mut() += 1;
-        *self.last_seq.borrow()
+        old_value
     }
 
     #[inline]
@@ -66,8 +78,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             return Err(Error::new(ErrorKind::AlreadyExists, ""));
         }
         let next_seq = self.get_next_seq().into() as usize;
-        self.root.borrow_mut().set_val(next_seq, &val);
-
+        self.root.borrow_mut().insert(next_seq, &key, &val);
         Ok(())
     }
 
