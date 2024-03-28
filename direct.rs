@@ -9,6 +9,11 @@ use crate::node::*;
 
 type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
 
+pub enum RootNodeKeyExceed {
+    IndexExceedCapacity,
+    NoFreeSlots,
+}
+
 pub struct DirectMap<'a, K, V> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V>,
@@ -30,7 +35,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + From<K>,
-        K: From<V>
+        K: From<V> + Into<u64>
 {
     #[inline]
     fn get_next_seq(&self) -> K {
@@ -43,6 +48,20 @@ impl<'a, K, V> DirectMap<'a, K, V>
     fn get_val(&self) -> K {
         *self.last_seq.borrow_mut() += 1;
         *self.last_seq.borrow()
+    }
+
+    #[inline]
+    pub(crate) fn is_key_exceed(&self, key: K) -> Option<RootNodeKeyExceed> {
+        let index = key.into() as usize;
+        // if key's index is exceeded
+        if index >= self.root.borrow().get_capacity() {
+            return Some(RootNodeKeyExceed::IndexExceedCapacity);
+        }
+        // if we still have free slots
+        if self.root.borrow().has_free_slots() {
+            return None;
+        }
+        Some(RootNodeKeyExceed::NoFreeSlots)
     }
 }
 
@@ -62,11 +81,6 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             nodes: list,
             last_seq: RefCell::new(K::default()),
         }
-    }
-
-    fn is_key_exceed(&self, key: K) -> bool {
-        let index = key.into() as usize;
-        index >= self.root.borrow().get_capacity()
     }
 
     async fn insert(&self, key: K, val: V) -> Result<()> {

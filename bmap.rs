@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use tokio::io::Result;
 use crate::VMap;
 use crate::InvalidValue;
-use crate::direct::DirectMap;
+use crate::direct::{DirectMap, RootNodeKeyExceed};
 use crate::btree::BtreeMap;
 use crate::node::BtreeNode;
 
@@ -61,7 +61,7 @@ impl<'a, K, V> BMap<'a, K, V>
     pub async fn do_insert(&mut self, key: K, val: V) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                if direct.is_key_exceed(key) {
+                if let Some(reason) = direct.is_key_exceed(key) {
                     // convert and insert
                     let data = direct.data.clone();
                     let nodes: HashMap<_, _> = direct.nodes.borrow_mut().iter().map(|(k, v)| (k.to_owned(), v.to_owned())).collect();
