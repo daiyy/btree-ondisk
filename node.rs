@@ -8,6 +8,7 @@ pub const BTREE_NODE_LEVEL_MIN: usize = BTREE_NODE_LEVEL_DATA + 1;
 pub const BTREE_NODE_LEVEL_MAX: usize = 14;
 
 #[derive(Debug)]
+#[repr(C, align(8))]
 pub struct BtreeNode<'a, K, V> {
     header: &'a mut BtreeNodeHeader,
     keymap: &'a mut [K],
@@ -18,7 +19,7 @@ pub struct BtreeNode<'a, K, V> {
 impl<'a, K, V> BtreeNode<'a, K, V>
     where
         K: Copy + std::cmp::PartialOrd,
-        V: Copy 
+        V: Copy
 {
     pub fn new(buf: &[u8]) -> Self {
         let len = buf.len();
@@ -254,9 +255,9 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         if self.get_level() > BTREE_NODE_LEVEL_MIN {
             if s && index > 0 {
                 index -= 1;
-            } else if s == false {
-                index += 1;
             }
+        } else if s == false {
+            index += 1;
         }
 
         return (false, index as usize);
