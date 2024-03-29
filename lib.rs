@@ -6,6 +6,7 @@ pub mod node;
 pub mod btree;
 mod direct;
 pub mod bmap;
+mod utils;
 
 pub trait VMap<K, V>
     where
