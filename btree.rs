@@ -57,7 +57,7 @@ pub struct BtreePath<'a, K, V> {
 impl<'a, K: Default + Copy, V> BtreePath<'a, K, V>
 {
     pub fn new() -> Self {
-        let mut l = Vec::new();
+        let mut l = Vec::with_capacity(BTREE_NODE_LEVEL_MAX);
         for _ in 0..BTREE_NODE_LEVEL_MAX {
             l.push(RefCell::new(BtreePathLevel {
                 node: None,
