@@ -73,7 +73,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
 
     async fn insert(&self, key: K, val: V) -> Result<()> {
         let index = key.into() as usize;
-        if index > self.root.borrow().get_capacity() {
+        if index > self.root.borrow().get_capacity() - 1 {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
         if !self.root.borrow().get_val(index).is_invalid() {

@@ -52,15 +52,47 @@ impl<'a, K, V> BMap<'a, K, V>
         K: From<V> + Into<u64>
 {
     async fn convert_and_insert(&mut self, data: Vec<u8>, last_seq: K, key: K, val: V) -> Result<()> {
-        // convert old root node to btree node
-        let mut btree = BtreeMap {
-            root: Rc::new(RefCell::new(BtreeNode::<K, V>::new(&data))),
-            data: data,
+        // create new btree map
+        let mut v = Vec::with_capacity(data.len());
+        v.extend(&data);
+        let btree = BtreeMap {
+            root: Rc::new(RefCell::new(BtreeNode::<K, V>::new(&v))),
+            data: v,
             nodes: RefCell::new(HashMap::new()),
             last_seq: RefCell::new(last_seq),
         };
-        // insert k, v
-        let res = btree.insert(key, val).await?;
+
+        // create child node @level 1
+        {
+
+        let mut node = btree.get_from_nodes(last_seq).await?;
+        (*node).borrow_mut().set_flags(0);
+        (*node).borrow_mut().set_nchild(0);
+        (*node).borrow_mut().set_level(1);
+        let root = btree.root.borrow_mut();
+        let mut index = 0;
+        for i in 0..root.get_nchild() {
+            let k = root.get_key(i);
+            let v = root.get_val(i);
+            (*node).borrow_mut().insert(i, &k, &v);
+            index += 1;
+        }
+        (*node).borrow_mut().insert(index, &key, &val);
+        btree.nodes.borrow_mut().insert(last_seq, node);
+
+        }
+
+        // create root node @level 2
+        {
+
+        let mut root = btree.root.borrow_mut();
+        root.set_nchild(0);
+        root.init_root(2);
+        let seq: V = V::from(last_seq);
+        root.insert(0, &key, &seq);
+
+        }
+
         // modify inner
         self.inner = NodeType::Btree(btree);
         Ok(())

@@ -18,8 +18,8 @@ pub struct BtreeNode<'a, K, V> {
 
 impl<'a, K, V> BtreeNode<'a, K, V>
     where
-        K: Copy + std::cmp::PartialOrd,
-        V: Copy
+        K: Copy + fmt::Display + std::cmp::PartialOrd,
+        V: Copy + fmt::Display
 {
     pub fn new(buf: &[u8]) -> Self {
         let len = buf.len();

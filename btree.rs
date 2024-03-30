@@ -205,14 +205,14 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         seq
     }
 
-    async fn get_from_nodes(&self, key: K) -> Result<BtreeNodeRef<'a, K, V>> {
+    pub async fn get_from_nodes(&self, key: K) -> Result<BtreeNodeRef<'a, K, V>> {
         let mut list = self.nodes.borrow_mut();
         if let Some(node) = list.get(&key) {
             return Ok(node.clone());
         }
 
         // FIXME: temp allocate a new node with 4096
-        let mut v = Vec::with_capacity(4096);
+        let mut v: Vec<u8> = Vec::with_capacity(4096);
         for i in 0..4096 {
             v.push(0);
         }
@@ -246,12 +246,11 @@ impl<'a, K, V> BtreeMap<'a, K, V>
     async fn do_lookup<'s>(&'s self, path: &'s BtreePath<'a, K, V>, key: &K, minlevel: usize) -> Result<V> {
         let root = self.get_root_node();
         let mut level = (*root).borrow().get_level();
-        if level < minlevel {
+        if level < minlevel || (*root).borrow().get_nchild() <= 0 {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
 
         let (mut found, mut index) = (*root).borrow().lookup(key);
-        assert!(found == false);
         let mut value = (*root).borrow().get_val(index);
 
         path.set_index(level, index);
@@ -531,6 +530,14 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         let n = (*root).borrow().get_nchild();
 
+        {
+
+        let root_ref = &(*root).borrow();
+        let child_ref = &(*child).borrow();
+        BtreeNode::move_right(root_ref, child_ref, n);
+
+        }
+
         (*root).borrow_mut().set_level(level + 1);
 
         let sib_node = path.get_sib_node(level);
@@ -538,10 +545,6 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         path.set_sib_node_none(level);
 
         self.op_insert(path, level, key, val);
-
-        let root_ref = &(*root).borrow();
-        let child_ref = &(*child).borrow();
-        BtreeNode::move_right(root_ref, child_ref, n);
 
         *key = (*child).borrow().get_key(0);
         *val = path.get_new_seq(level).into();
@@ -801,7 +804,6 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
 
         // key not found
         let level = self.prepare_insert(&path, &key).await?;
-
         self.commit_insert(&path, key, val, level);
         Ok(())
     }
