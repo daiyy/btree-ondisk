@@ -63,6 +63,7 @@ impl<'a, K, V> BMap<'a, K, V>
             caches: RefCell::new(Vec::new()),
         };
 
+        let first_root_key;
         // create child node @level 1
         {
 
@@ -71,6 +72,8 @@ impl<'a, K, V> BMap<'a, K, V>
         (*node).borrow_mut().set_nchild(0);
         (*node).borrow_mut().set_level(1);
         let root = btree.root.borrow_mut();
+        // save first key
+        first_root_key = root.get_key(0);
         let mut index = 0;
         for i in 0..root.get_nchild() {
             let k = root.get_key(i);
@@ -90,7 +93,7 @@ impl<'a, K, V> BMap<'a, K, V>
         root.set_nchild(0);
         root.init_root(2);
         let seq: V = V::from(last_seq);
-        root.insert(0, &key, &seq);
+        root.insert(0, &first_root_key, &seq);
 
         }
 
