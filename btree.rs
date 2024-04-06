@@ -412,7 +412,6 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         let mut level = BTREE_NODE_LEVEL_MIN;
         let mut dindex = path.get_index(level);
         for mut level in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
-            dindex = path.get_index(level);
             let node = path.get_nonroot_node(level);
             path.set_old_seq(level, r!(node).get_val(dindex).into());
 
@@ -466,6 +465,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
                 }
             }
         }
+        level += 1;
         // child of the root node is deleted
         path.set_op(level, BtreeMapOp::Delete);
 

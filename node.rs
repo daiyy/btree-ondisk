@@ -295,7 +295,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         *key = self.get_key(index);
         *val = self.get_val(index);
 
-        if index < nchild {
+        if index < nchild - 1 {
             unsafe {
                 let ksrc: *const K = &self.keymap[index + 1] as *const K;
                 let vsrc: *const V = &self.valmap[index + 1] as *const V;
