@@ -315,6 +315,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         let mut level = BTREE_NODE_LEVEL_DATA;
 
+        level = BTREE_NODE_LEVEL_MIN;
         // go through all non leap levels
         for level in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
             let node = path.get_nonroot_node(level);
