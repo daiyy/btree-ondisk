@@ -269,7 +269,12 @@ impl<'a, K, V> BtreeMap<'a, K, V>
                 index = 0;
             }
 
-            value = (*node).borrow().get_val(index);
+            if index < (*node).borrow().get_nchild() {
+                value = (*node).borrow().get_val(index);
+            } else {
+                value = V::default();
+            }
+
             path.set_nonroot_node(level, node);
             path.set_index(level, index);
             level -= 1;
