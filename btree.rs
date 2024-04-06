@@ -584,6 +584,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             let idx = path.get_index(level) - r!(node).get_nchild();
             path.set_index(level, idx);
 
+            w!(right).insert(idx, key, val);
+
             *key = r!(right).get_key(0);
             *val = path.get_new_seq(level).into();
 
