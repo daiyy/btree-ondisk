@@ -241,7 +241,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             BtreeMapOp::BorrowLeft => self.op_borrow_left(path, level, key, val),
             BtreeMapOp::BorrowRight => self.op_borrow_right(path, level, key, val),
             BtreeMapOp::Delete => self.op_delete(path, level, key, val),
-            BtreeMapOp::Shrink => self.op_shink(path, level, key, val),
+            BtreeMapOp::Shrink => self.op_shrink(path, level, key, val),
             BtreeMapOp::Nop => self.op_nop(path, level, key, val),
             _ => panic!("{:?} not yet implement", path.get_op(level)),
         }
@@ -788,7 +788,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         }
     }
 
-    fn op_shink(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
+    fn op_shrink(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
         self.op_delete(path, level, key, val);
 
         let root = self.get_root_node();
