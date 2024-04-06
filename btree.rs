@@ -619,8 +619,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         {
 
-        let node_ref = &r!(node);
         let left_ref = &r!(left);
+        let node_ref = &r!(node);
         BtreeNode::move_left(left_ref, node_ref, n);
 
         }
@@ -691,9 +691,9 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         {
 
-        let node_ref = &r!(node);
         let left_ref = &r!(left);
-        BtreeNode::move_right(node_ref, left_ref, n);
+        let node_ref = &r!(node);
+        BtreeNode::move_right(left_ref, node_ref, n);
 
         }
 
@@ -735,8 +735,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         {
 
-        let node_ref = &r!(node);
         let left_ref = &r!(left);
+        let node_ref = &r!(node);
         BtreeNode::move_right(left_ref, node_ref, n);
 
         }
@@ -762,7 +762,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         let node_ref = &r!(node);
         let right_ref = &r!(right);
-        BtreeNode::move_left(right_ref, node_ref, n);
+        BtreeNode::move_left(node_ref, right_ref, n);
 
         }
 
