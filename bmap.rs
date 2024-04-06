@@ -60,6 +60,7 @@ impl<'a, K, V> BMap<'a, K, V>
             data: v,
             nodes: RefCell::new(HashMap::new()),
             last_seq: RefCell::new(last_seq),
+            caches: RefCell::new(Vec::new()),
         };
 
         // create child node @level 1

@@ -136,6 +136,7 @@ pub struct BtreeMap<'a, K, V> {
     pub root: BtreeNodeRef<'a, K, V>,
     pub nodes: RefCell<HashMap<K, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
     pub last_seq: RefCell<K>,
+    pub caches: RefCell<Vec<Rc<Box<Vec<u8>>>>>,
 }
 
 impl<'a, K, V> fmt::Display for BtreeMap<'a, K, V>
@@ -212,12 +213,15 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         }
 
         // FIXME: temp allocate a new node with 4096
-        let mut v: Vec<u8> = Vec::with_capacity(4096);
+        let mut v: Rc<Box<Vec<u8>>> = Rc::new(Box::new(Vec::with_capacity(4096)));
+        let inner = Rc::make_mut(&mut v);
         for i in 0..4096 {
-            v.push(0);
+            inner.push(0);
         }
+
         let n = Rc::new(RefCell::new(BtreeNode::<K, V>::new(&v)));
         list.insert(key, n.clone());
+        self.caches.borrow_mut().push(v);
         Ok(n)
     }
 
@@ -786,6 +790,7 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
             root: Rc::new(RefCell::new(root)),
             nodes: list,
             last_seq: RefCell::new(K::default()),
+            caches: RefCell::new(Vec::new()),
         }
     }
 
