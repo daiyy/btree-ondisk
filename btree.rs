@@ -83,7 +83,7 @@ impl<'a, K: Default + Copy, V> BtreePath<'a, K, V>
     }
 
     pub fn get_nonroot_node(&self, level: usize) -> BtreeNodeRef<'a, K, V> {
-        self.levels[level].borrow_mut().node.as_mut().unwrap().clone()
+        self.levels[level].borrow().node.as_ref().unwrap().clone()
     }
 
     pub fn set_nonroot_node(&self, level: usize, node: BtreeNodeRef<'a, K, V>) {
@@ -95,7 +95,7 @@ impl<'a, K: Default + Copy, V> BtreePath<'a, K, V>
     }
 
     pub fn get_sib_node(&self, level: usize) -> BtreeNodeRef<'a, K, V> {
-        self.levels[level].borrow_mut().sib_node.as_ref().unwrap().clone()
+        self.levels[level].borrow().sib_node.as_ref().unwrap().clone()
     }
 
     pub fn set_sib_node(&self, level: usize, node: BtreeNodeRef<'a, K, V>) {
@@ -572,9 +572,13 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             mv = true;
         }
 
+        {
+
         let node_ref = &r!(node);
         let right_ref = &r!(right);
         BtreeNode::move_right(node_ref, right_ref, n);
+
+        }
 
         if mv {
             let idx = path.get_index(level) - r!(node).get_nchild();
@@ -611,16 +615,20 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             mv = true;
         }
 
+        {
+
         let node_ref = &r!(node);
         let left_ref = &r!(left);
         BtreeNode::move_left(left_ref, node_ref, n);
+
+        }
 
         let node_key = r!(node).get_key(0);
         self.promote_key(path, level + 1, &node_key);
 
         if mv {
             let sib_node = path.get_sib_node(level);
-            path.set_sib_node(level, sib_node);
+            path.set_nonroot_node(level, sib_node);
             path.set_sib_node_none(level);
             path.set_index(level, path.get_index(level) + lnchild);
             path.set_index(level + 1, path.get_index(level + 1) - 1);
@@ -645,9 +653,13 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             mv = true;
         }
 
+        {
+
         let node_ref = &r!(node);
         let right_ref = &r!(right);
         BtreeNode::move_right(node_ref, right_ref, n);
+
+        }
 
         path.set_index(level + 1, path.get_index(level + 1) + 1);
         let node_key = r!(right).get_key(0);
@@ -675,9 +687,13 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         let n = r!(node).get_nchild();
 
+        {
+
         let node_ref = &r!(node);
         let left_ref = &r!(left);
         BtreeNode::move_right(node_ref, left_ref, n);
+
+        }
 
         let sib_node = path.get_sib_node(level);
         path.set_nonroot_node(level, sib_node);
@@ -693,9 +709,13 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         let n = r!(node).get_nchild();
 
+        {
+
         let node_ref = &r!(node);
         let right_ref = &r!(right);
         BtreeNode::move_left(node_ref, right_ref, n);
+
+        }
 
         path.set_sib_node_none(level);
         path.set_index(level + 1, path.get_index(level + 1) + 1);
@@ -711,9 +731,13 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         let mut n = (nchild + lnchild) / 2 - nchild;
 
+        {
+
         let node_ref = &r!(node);
         let left_ref = &r!(left);
         BtreeNode::move_right(left_ref, node_ref, n);
+
+        }
 
         let node_key = r!(node).get_key(0);
         self.promote_key(path, level + 1, &node_key);
@@ -732,9 +756,13 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         let mut n = (nchild + rnchild) / 2 - nchild;
 
+        {
+
         let node_ref = &r!(node);
         let right_ref = &r!(right);
         BtreeNode::move_left(right_ref, node_ref, n);
+
+        }
 
         path.set_index(level + 1, path.get_index(level + 1) + 1);
         let node_key = r!(right).get_key(0);
@@ -769,9 +797,14 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         w!(root).delete(0, &mut _key, &mut _val);
         w!(root).set_level(level);
         let n = r!(child).get_nchild();
+
+        {
+
         let root_ref = &r!(root);
         let child_ref = &r!(child);
         BtreeNode::move_left(root_ref, child_ref, n);
+
+        }
 
         path.set_nonroot_node_none(level);
     }
