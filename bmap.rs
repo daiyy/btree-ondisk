@@ -133,6 +133,21 @@ impl<'a, K, V> BMap<'a, K, V>
         }
     }
 
+    async fn do_delete(&mut self, key: K) -> Result<()> {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                todo!();
+            },
+            NodeType::Btree(btree) => {
+                return btree.delete(key).await;
+            },
+        }
+    }
+
+    pub async fn delete(&mut self, key: K) -> Result<()> {
+        self.do_delete(key).await
+    }
+
     pub async fn lookup_at_level(&self, key: K, level: usize) -> Result<V> {
         match &self.inner {
             NodeType::Direct(direct) => {

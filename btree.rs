@@ -229,6 +229,22 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         todo!();
     }
 
+    pub async fn remove_from_nodes(&self, node: BtreeNodeRef<'a, K, V>) -> Result<()> {
+        let list = self.nodes.borrow();
+        let mut key_found = None;
+        for (k, v) in list.iter() {
+            if v == &node {
+                key_found = Some(k);
+                break;
+            }
+        }
+        if let Some(k) = key_found {
+            let mut list = self.nodes.borrow_mut();
+            list.remove(k);
+        }
+        Ok(())
+    }
+
     fn do_op(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
         match path.get_op(level) {
             BtreeMapOp::Insert => self.op_insert(path, level, key, val),
@@ -808,6 +824,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         }
 
+        let node = path.get_nonroot_node(level);
+        // TODO: remove this node from cache list
         path.set_nonroot_node_none(level);
     }
 

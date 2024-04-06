@@ -315,6 +315,12 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 }
 
+impl<'a, K, V> PartialEq for BtreeNode<'a, K, V> {
+    fn eq(&self, other: &Self) -> bool {
+        std::ptr::addr_of!(self.header) == std::ptr::addr_of!(other.header)
+    }
+}
+
 impl<'a, K, V> fmt::Display for BtreeNode<'a, K, V>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
