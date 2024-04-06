@@ -15,6 +15,7 @@ pub trait VMap<K, V>
         K: From<V>
 {
     fn new(data: Vec<u8>) -> Self;
+    async fn lookup(&self, key: K, level: usize) -> Result<V>;
     async fn insert(&self, key: K, val: V) -> Result<()>;
     async fn delete(&self, key: K) -> Result<()>;
     async fn seek_key(&self, start: K) -> Result<K>;

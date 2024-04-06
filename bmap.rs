@@ -129,4 +129,15 @@ impl<'a, K, V> BMap<'a, K, V>
             },
         }
     }
+
+    pub async fn lookup_at_level(&self, key: K, level: usize) -> Result<V> {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.lookup(key, level).await;
+            },
+            NodeType::Btree(btree) => {
+                return btree.lookup(key, level).await;
+            },
+        }
+    }
 }

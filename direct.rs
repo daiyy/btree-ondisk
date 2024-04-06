@@ -71,6 +71,10 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         }
     }
 
+    async fn lookup(&self, key: K, level: usize) -> Result<V> {
+        return Err(Error::new(ErrorKind::NotFound, ""));
+    }
+
     async fn insert(&self, key: K, val: V) -> Result<()> {
         let index = key.into() as usize;
         if index > self.root.borrow().get_capacity() - 1 {

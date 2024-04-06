@@ -835,6 +835,12 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
         }
     }
 
+    async fn lookup(&self, key: K, level: usize) -> Result<V> {
+        let path = BtreePath::new();
+        let val = self.do_lookup(&path, &key, level).await?;
+        Ok(val)
+    }
+
     async fn insert(&self, key: K, val: V) -> Result<()> {
         let path = BtreePath::new();
         match self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN).await {
