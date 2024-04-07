@@ -688,8 +688,9 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             let sib_node = path.get_sib_node(level);
             path.set_sib_node(level, sib_node);
             path.set_sib_node_none(level);
+            let nchild = r!(node).get_nchild();
             path.set_index(level, path.get_index(level) - nchild);
-            path.set_index(level + 1, path.get_index(level + 1) - 1);
+            path.set_index(level + 1, path.get_index(level + 1) + 1);
         } else {
             path.set_sib_node_none(level);
         }
@@ -709,10 +710,11 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         let left_ref = &r!(left);
         let node_ref = &r!(node);
-        BtreeNode::move_right(left_ref, node_ref, n);
+        BtreeNode::move_left(left_ref, node_ref, n);
 
         }
 
+        // TODO: remove node from cache list
         let sib_node = path.get_sib_node(level);
         path.set_nonroot_node(level, sib_node);
         path.set_sib_node_none(level);
@@ -725,7 +727,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         let node = path.get_nonroot_node(level);
         let right = path.get_sib_node(level);
 
-        let n = r!(node).get_nchild();
+        let n = r!(right).get_nchild();
 
         {
 
@@ -735,6 +737,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         }
 
+        // TODO: remove node from cache list
         path.set_sib_node_none(level);
         path.set_index(level + 1, path.get_index(level + 1) + 1);
     }
