@@ -19,6 +19,7 @@ pub struct BtreeNode<'a, K, V> {
     ptr: *const u8,
     size: usize,
     id: Option<K>,
+    dirty: bool,
 }
 
 impl<'a, K, V> BtreeNode<'a, K, V>
@@ -60,6 +61,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
             ptr: std::ptr::null(),
             size: len,
             id: None,
+            dirty: false,
         }
     }
 
@@ -187,6 +189,21 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     pub fn init_root(&mut self, level: usize) {
         self.header.flags = BTREE_NODE_ROOT;
         self.set_level(level);
+    }
+
+    #[inline]
+    pub fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    #[inline]
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    #[inline]
+    pub fn clear_dirty(&mut self) {
+        self.dirty = false;
     }
 
     // move n k,v pairs from head of right append to left

@@ -8,8 +8,8 @@ use tokio::io::{Error, ErrorKind, Result};
 use crate::node::*;
 use crate::VMap;
 
-type BtreeLevel = usize;
-type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
+pub(crate) type BtreeLevel = usize;
+pub(crate) type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
 
 macro_rules! r {
     ($node: expr) => {
@@ -136,6 +136,7 @@ pub struct BtreeMap<'a, K, V> {
     pub root: BtreeNodeRef<'a, K, V>,
     pub nodes: RefCell<HashMap<K, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
     pub last_seq: RefCell<K>,
+    pub dirty: RefCell<bool>,
 }
 
 impl<'a, K, V> fmt::Display for BtreeMap<'a, K, V>
@@ -203,6 +204,21 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         let seq = self.get_next_seq();
         path.set_new_seq(level, seq);
         seq
+    }
+
+    #[inline]
+    fn is_dirty(&self) -> bool {
+        self.dirty.borrow().clone()
+    }
+
+    #[inline]
+    fn set_dirty(&self) {
+        *self.dirty.borrow_mut() = true;
+    }
+
+    #[inline]
+    fn clear_dirty(&self) {
+        *self.dirty.borrow_mut() = false;
     }
 
     pub async fn get_from_nodes(&self, key: K) -> Result<BtreeNodeRef<'a, K, V>> {
@@ -392,6 +408,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         for level in BTREE_NODE_LEVEL_MIN..=maxlevel {
             self.do_op(path, level, &mut _key, &mut _val);
         }
+
+        self.set_dirty();
     }
 
     async fn prepare_delete<'s>(&'s self, path: &'s BtreePath<'a, K, V>) -> Result<BtreeLevel> {
@@ -467,6 +485,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         for level in BTREE_NODE_LEVEL_MIN..=maxlevel {
             self.do_op(path, level, &mut key, &mut val);
         }
+
+        self.set_dirty();
     }
 
     fn promote_key(&self, path: &BtreePath<'_, K, V>, lvl: usize, key: &K) {
@@ -477,6 +497,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
                 // get node @ level
                 let node = path.get_nonroot_node(level);
                 (*node).borrow_mut().set_key(index, key);
+                w!(node).mark_dirty();
 
                 level += 1;
                 if index != 0 || self.is_root_level(level) {
@@ -508,6 +529,16 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         }
         Err(Error::new(ErrorKind::NotFound, ""))
     }
+
+    pub(crate) fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
+        let mut v = Vec::new();
+        for (_, n) in self.nodes.borrow().iter() {
+            if r!(*n).is_dirty() {
+                v.push(n.clone());
+            }
+        }
+        v
+    }
 }
 
 // all op_* functions
@@ -524,6 +555,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             let node = path.get_nonroot_node(level);
 
             (*node).borrow_mut().insert(index, key, val);
+            w!(node).mark_dirty();
 
             if index == 0 {
                 let node_key = (*node).borrow().get_key(0);
@@ -549,6 +581,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         BtreeNode::move_right(root_ref, child_ref, n);
 
         }
+
+        w!(child).mark_dirty();
 
         (*root).borrow_mut().set_level(level + 1);
 
@@ -581,6 +615,9 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         BtreeNode::move_right(node_ref, right_ref, n);
 
         }
+
+        w!(node).mark_dirty();
+        w!(right).mark_dirty();
 
         if mv {
             let idx = path.get_index(level) - r!(node).get_nchild();
@@ -627,6 +664,9 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         }
 
+        w!(left).mark_dirty();
+        w!(node).mark_dirty();
+
         let node_key = r!(node).get_key(0);
         self.promote_key(path, level + 1, &node_key);
 
@@ -665,6 +705,9 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         }
 
+        w!(node).mark_dirty();
+        w!(right).mark_dirty();
+
         path.set_index(level + 1, path.get_index(level + 1) + 1);
         let node_key = r!(right).get_key(0);
         self.promote_key(path, level + 1, &node_key);
@@ -700,6 +743,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         }
 
+        w!(left).mark_dirty();
+
         self.remove_from_nodes(node);
         let sib_node = path.get_sib_node(level);
         path.set_nonroot_node(level, sib_node);
@@ -723,6 +768,8 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         }
 
+        w!(node).mark_dirty();
+
         self.remove_from_nodes(path.get_sib_node(level));
         path.set_sib_node_none(level);
         path.set_index(level + 1, path.get_index(level + 1) + 1);
@@ -745,6 +792,9 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         BtreeNode::move_right(left_ref, node_ref, n);
 
         }
+
+        w!(node).mark_dirty();
+        w!(left).mark_dirty();
 
         let node_key = r!(node).get_key(0);
         self.promote_key(path, level + 1, &node_key);
@@ -771,6 +821,9 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         }
 
+        w!(node).mark_dirty();
+        w!(right).mark_dirty();
+
         path.set_index(level + 1, path.get_index(level + 1) + 1);
         let node_key = r!(right).get_key(0);
         self.promote_key(path, level + 1, &node_key);
@@ -783,6 +836,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         if self.is_nonroot_level(level) {
             let node = path.get_nonroot_node(level);
             w!(node).delete(path.get_index(level), key, val);
+            w!(node).mark_dirty();
             if path.get_index(level) == 0 {
                 let node_key = r!(node).get_key(0);
                 self.promote_key(path, level + 1, &node_key);
@@ -837,6 +891,7 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
             root: Rc::new(RefCell::new(root)),
             nodes: list,
             last_seq: RefCell::new(K::default()),
+            dirty: RefCell::new(false),
         }
     }
 

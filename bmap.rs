@@ -8,6 +8,7 @@ use crate::InvalidValue;
 use crate::direct::DirectMap;
 use crate::btree::BtreeMap;
 use crate::node::BtreeNode;
+use crate::btree::BtreeNodeRef;
 
 pub enum NodeType<'a, K, V> {
     Direct(DirectMap<'a, K, V>),
@@ -60,6 +61,7 @@ impl<'a, K, V> BMap<'a, K, V>
             data: v,
             nodes: RefCell::new(HashMap::new()),
             last_seq: RefCell::new(last_seq),
+            dirty: RefCell::new(true),
         };
 
         let first_root_key;
@@ -81,6 +83,7 @@ impl<'a, K, V> BMap<'a, K, V>
             index += 1;
         }
         (*node).borrow_mut().insert(index, &key, &val);
+        (*node).borrow_mut().mark_dirty();
         btree.nodes.borrow_mut().insert(last_seq, node);
 
         }
@@ -154,6 +157,17 @@ impl<'a, K, V> BMap<'a, K, V>
             },
             NodeType::Btree(btree) => {
                 return btree.lookup(key, level).await;
+            },
+        }
+    }
+
+    pub fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return Vec::new();
+            },
+            NodeType::Btree(btree) => {
+                return btree.lookup_dirty();
             },
         }
     }
