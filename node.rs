@@ -7,6 +7,8 @@ pub const BTREE_NODE_LEVEL_DATA: usize = 0x00;
 pub const BTREE_NODE_LEVEL_MIN: usize = BTREE_NODE_LEVEL_DATA + 1;
 pub const BTREE_NODE_LEVEL_MAX: usize = 14;
 
+const MIN_ALIGNED: usize = 8;
+
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub struct BtreeNode<'a, K, V> {
@@ -14,6 +16,9 @@ pub struct BtreeNode<'a, K, V> {
     keymap: &'a mut [K],
     valmap: &'a mut [V],
     capacity: usize,    // kv capacity of this btree node
+    ptr: *const u8,
+    size: usize,
+    id: Option<K>,
 }
 
 impl<'a, K, V> BtreeNode<'a, K, V>
@@ -21,7 +26,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         K: Copy + fmt::Display + std::cmp::PartialOrd,
         V: Copy + fmt::Display
 {
-    pub fn new(buf: &[u8]) -> Self {
+    pub fn from_slice(buf: &[u8]) -> Self {
         let len = buf.len();
         let hdr_size = std::mem::size_of::<BtreeNodeHeader>();
         if len < hdr_size {
@@ -52,7 +57,26 @@ impl<'a, K, V> BtreeNode<'a, K, V>
             keymap: keymap,
             valmap: valmap,
             capacity: capacity,
+            ptr: std::ptr::null(),
+            size: len,
+            id: None,
         }
+    }
+
+    pub fn new(k: K, size: usize) -> Option<Self> {
+        if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
+            let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
+            if ptr.is_null() {
+                return None;
+            }
+
+            let data = unsafe { std::slice::from_raw_parts(ptr, size) };
+            let mut node = Self::from_slice(data);
+            node.ptr = ptr;
+            node.id = Some(k);
+            return Some(node);
+        };
+        None
     }
 
     #[inline]
@@ -145,6 +169,11 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     #[inline]
     pub fn node_key(&self) -> &K {
         &self.keymap[0]
+    }
+
+    #[inline]
+    pub fn id(&self) -> Option<&K> {
+        self.id.as_ref()
     }
 
     #[inline]
@@ -312,6 +341,17 @@ impl<'a, K, V> BtreeNode<'a, K, V>
 
         nchild -= 1;
         self.set_nchild(nchild);
+    }
+}
+
+impl<'a, K, V> Drop for BtreeNode<'a, K, V> {
+    fn drop(&mut self) {
+        if self.ptr.is_null() {
+            return;
+        }
+        if let Ok(layout) = std::alloc::Layout::from_size_align(self.size, MIN_ALIGNED) {
+            unsafe { std::alloc::dealloc(self.ptr as *mut u8, layout) };
+        }
     }
 }
 

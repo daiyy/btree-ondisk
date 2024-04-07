@@ -56,11 +56,10 @@ impl<'a, K, V> BMap<'a, K, V>
         let mut v = Vec::with_capacity(data.len());
         v.extend(&data);
         let btree = BtreeMap {
-            root: Rc::new(RefCell::new(BtreeNode::<K, V>::new(&v))),
+            root: Rc::new(RefCell::new(BtreeNode::<K, V>::from_slice(&v))),
             data: v,
             nodes: RefCell::new(HashMap::new()),
             last_seq: RefCell::new(last_seq),
-            caches: RefCell::new(Vec::new()),
         };
 
         let first_root_key;

@@ -60,7 +60,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         K: From<V> + Into<u64>
 {
     fn new(data: Vec<u8>) -> Self {
-        let root = BtreeNode::<K, V>::new(&data);
+        let root = BtreeNode::<K, V>::from_slice(&data);
         let mut list = RefCell::new(HashMap::new());
 
         Self {

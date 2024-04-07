@@ -136,7 +136,6 @@ pub struct BtreeMap<'a, K, V> {
     pub root: BtreeNodeRef<'a, K, V>,
     pub nodes: RefCell<HashMap<K, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
     pub last_seq: RefCell<K>,
-    pub caches: RefCell<Vec<Rc<Box<Vec<u8>>>>>,
 }
 
 impl<'a, K, V> fmt::Display for BtreeMap<'a, K, V>
@@ -212,35 +211,22 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             return Ok(node.clone());
         }
 
-        // FIXME: temp allocate a new node with 4096
-        let mut v: Rc<Box<Vec<u8>>> = Rc::new(Box::new(Vec::with_capacity(4096)));
-        let inner = Rc::make_mut(&mut v);
-        for i in 0..4096 {
-            inner.push(0);
+        if let Some(node) = BtreeNode::<K, V>::new(key, 4096) {
+            let n = Rc::new(RefCell::new(node));
+            list.insert(key, n.clone());
+            return Ok(n);
         }
-
-        let n = Rc::new(RefCell::new(BtreeNode::<K, V>::new(&v)));
-        list.insert(key, n.clone());
-        self.caches.borrow_mut().push(v);
-        Ok(n)
+        return Err(Error::new(ErrorKind::OutOfMemory, ""));
     }
 
     async fn get_new_node(&self) -> Result<&BtreeNode<K, V>> {
         todo!();
     }
 
-    pub async fn remove_from_nodes(&self, node: BtreeNodeRef<'a, K, V>) -> Result<()> {
-        let list = self.nodes.borrow();
-        let mut key_found = None;
-        for (k, v) in list.iter() {
-            if v == &node {
-                key_found = Some(k);
-                break;
-            }
-        }
-        if let Some(k) = key_found {
-            let mut list = self.nodes.borrow_mut();
-            list.remove(k);
+    fn remove_from_nodes(&self, node: BtreeNodeRef<K, V>) -> Result<()> {
+        if let Some(id) = r!(node).id() {
+            let n = self.nodes.borrow_mut().remove(id);
+            assert!(n.is_some());
         }
         Ok(())
     }
@@ -714,7 +700,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         }
 
-        // TODO: remove node from cache list
+        self.remove_from_nodes(node);
         let sib_node = path.get_sib_node(level);
         path.set_nonroot_node(level, sib_node);
         path.set_sib_node_none(level);
@@ -737,7 +723,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         }
 
-        // TODO: remove node from cache list
+        self.remove_from_nodes(path.get_sib_node(level));
         path.set_sib_node_none(level);
         path.set_index(level + 1, path.get_index(level + 1) + 1);
     }
@@ -827,8 +813,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         }
 
-        let node = path.get_nonroot_node(level);
-        // TODO: remove this node from cache list
+        self.remove_from_nodes(path.get_nonroot_node(level));
         path.set_nonroot_node_none(level);
     }
 
@@ -844,7 +829,7 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
         K: From<V>
 {
     fn new(data: Vec<u8>) -> Self {
-        let root = BtreeNode::<K, V>::new(&data);
+        let root = BtreeNode::<K, V>::from_slice(&data);
         let mut list = RefCell::new(HashMap::new());
 
         Self {
@@ -852,7 +837,6 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
             root: Rc::new(RefCell::new(root)),
             nodes: list,
             last_seq: RefCell::new(K::default()),
-            caches: RefCell::new(Vec::new()),
         }
     }
 
