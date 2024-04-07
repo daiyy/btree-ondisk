@@ -522,11 +522,11 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         if self.is_nonroot_level(level) {
             // non root node
             let node = path.get_nonroot_node(level);
-            let node_key = (*node).borrow().get_key(0);
 
             (*node).borrow_mut().insert(index, key, val);
 
             if index == 0 {
+                let node_key = (*node).borrow().get_key(0);
                 self.promote_key(path, level + 1, &node_key);
             }
         } else {
