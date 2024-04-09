@@ -935,6 +935,7 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
             }
 
             // lookup right sibling node
+            // get parent node
             let p_node = self.get_node(&path, level + 1);
             let p_index = path.get_index(level + 1) + 1;
             let mut _key = key; _key += count as u64;
@@ -945,6 +946,7 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
             path.set_index(level + 1, p_index);
             path.set_nonroot_node_none(level);
 
+            // get sibling node for next looop
             node = self.get_from_nodes(v.into()).await?;
             path.set_nonroot_node(level, node.clone());
             index = 0;
