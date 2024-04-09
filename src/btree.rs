@@ -901,6 +901,58 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
         Ok(val)
     }
 
+    async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
+        let level = BTREE_NODE_LEVEL_MIN;
+        let path = BtreePath::new();
+        let value = self.do_lookup(&path, &key, level).await?;
+
+        if maxblocks == 1 {
+            return Ok((value, 1));
+        }
+
+        let mut count = 1;
+        let maxlevel = self.get_height() - 1;
+        let mut node = path.get_nonroot_node(level);
+        let mut index = path.get_index(level) + 1;
+        loop {
+            while index < r!(node).get_nchild() {
+                if count == maxblocks {
+                    return Ok((value, count))
+                }
+
+                let mut _key = key; _key += count as u64;
+                if r!(node).get_key(index) != _key {
+                    // early break at first non continue key
+                    return Ok((value, count))
+                }
+
+                count += 1;
+                index += 1;
+            }
+
+            if level == maxlevel {
+                break;
+            }
+
+            // lookup right sibling node
+            node = self.get_node(&path, level + 1);
+            index = path.get_index(level + 1) + 1;
+            let mut _key = key; _key += count as u64;
+            if index >= r!(node).get_nchild() || r!(node).get_key(index) != _key {
+                return Ok((value, count));
+            }
+            let v = r!(node).get_val(index);
+            path.set_index(level + 1, index);
+            path.set_nonroot_node_none(level);
+
+            let node = self.get_from_nodes(v.into()).await?;
+            path.set_nonroot_node(level, node);
+            index = 0;
+            path.set_index(level, index);
+        }
+        Ok((value, count))
+    }
+
     async fn insert(&self, key: K, val: V) -> Result<()> {
         let path = BtreePath::new();
         match self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN).await {

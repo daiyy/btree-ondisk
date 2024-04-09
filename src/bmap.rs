@@ -161,6 +161,17 @@ impl<'a, K, V> BMap<'a, K, V>
         }
     }
 
+    pub async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.lookup_contig(key, maxblocks).await;
+            },
+            NodeType::Btree(btree) => {
+                return btree.lookup_contig(key, maxblocks).await;
+            },
+        }
+    }
+
     pub fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
         match &self.inner {
             NodeType::Direct(direct) => {

@@ -75,6 +75,10 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         return Err(Error::new(ErrorKind::NotFound, ""));
     }
 
+    async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
+        todo!();
+    }
+
     async fn insert(&self, key: K, val: V) -> Result<()> {
         let index = key.into() as usize;
         if index > self.root.borrow().get_capacity() - 1 {
