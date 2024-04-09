@@ -935,18 +935,18 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
             }
 
             // lookup right sibling node
-            node = self.get_node(&path, level + 1);
-            index = path.get_index(level + 1) + 1;
+            let p_node = self.get_node(&path, level + 1);
+            let p_index = path.get_index(level + 1) + 1;
             let mut _key = key; _key += count as u64;
-            if index >= r!(node).get_nchild() || r!(node).get_key(index) != _key {
+            if p_index >= r!(p_node).get_nchild() || r!(p_node).get_key(p_index) != _key {
                 return Ok((value, count));
             }
-            let v = r!(node).get_val(index);
-            path.set_index(level + 1, index);
+            let v = r!(p_node).get_val(p_index);
+            path.set_index(level + 1, p_index);
             path.set_nonroot_node_none(level);
 
-            let node = self.get_from_nodes(v.into()).await?;
-            path.set_nonroot_node(level, node);
+            node = self.get_from_nodes(v.into()).await?;
+            path.set_nonroot_node(level, node.clone());
             index = 0;
             path.set_index(level, index);
         }
