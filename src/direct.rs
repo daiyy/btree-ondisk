@@ -76,7 +76,23 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
     }
 
     async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
-        todo!();
+        let index = key.into() as usize;
+        if index > self.root.borrow().get_capacity() - 1 {
+            return Err(Error::new(ErrorKind::NotFound, ""));
+        }
+        if self.root.borrow().get_val(index).is_invalid() {
+            return Err(Error::new(ErrorKind::NotFound, ""));
+        }
+        let max = std::cmp::max(maxblocks, self.root.borrow().get_capacity() - 1 - index + 1);
+        let mut count = 1;
+        while count < max {
+            if self.root.borrow().get_val(index + count).is_invalid() {
+                break;
+            }
+            count += 1;
+        }
+        let val = self.root.borrow().get_val(index + count);
+        return Ok((val, count));
     }
 
     async fn insert(&self, key: K, val: V) -> Result<()> {
