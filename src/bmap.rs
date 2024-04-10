@@ -182,4 +182,26 @@ impl<'a, K, V> BMap<'a, K, V>
             },
         }
     }
+
+    pub async fn seek_key(&self, start: K) -> Result<K> {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.seek_key(start).await;
+            },
+            NodeType::Btree(btree) => {
+                return btree.seek_key(start).await;
+            },
+        }
+    }
+
+    pub async fn last_key(&self) -> Result<K> {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.last_key().await;
+            },
+            NodeType::Btree(btree) => {
+                return btree.last_key().await;
+            },
+        }
+    }
 }
