@@ -318,10 +318,10 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         level -= 1;
         while level > 0 {
-            let node = self.get_from_nodes(value.into()).await?;
+            node = self.get_from_nodes(value.into()).await?;
             index = r!(node).get_nchild() - 1;
             value = r!(node).get_val(index);
-            path.set_nonroot_node(level, node);
+            path.set_nonroot_node(level, node.clone());
             path.set_index(level, index);
             level -= 1;
         }
