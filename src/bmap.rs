@@ -135,6 +135,10 @@ impl<'a, K, V> BMap<'a, K, V>
         }
     }
 
+    pub async fn insert(&mut self, key: K, val: V) -> Result<()> {
+        self.do_insert(key, val).await
+    }
+
     async fn do_delete(&mut self, key: K) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
