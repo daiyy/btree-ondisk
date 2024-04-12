@@ -14,6 +14,7 @@ pub struct DirectMap<'a, K, V> {
     pub root: BtreeNodeRef<'a, K, V>,
     pub nodes: RefCell<HashMap<K, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
     pub last_seq: RefCell<K>,
+    pub dirty: RefCell<bool>,
 }
 
 impl<'a, K, V> fmt::Display for DirectMap<'a, K, V>
@@ -51,6 +52,21 @@ impl<'a, K, V> DirectMap<'a, K, V>
         // if key's index is exceeded
         index >= self.root.borrow().get_capacity()
     }
+
+    #[inline]
+    fn is_dirty(&self) -> bool {
+        self.dirty.borrow().clone()
+    }
+
+    #[inline]
+    fn set_dirty(&self) {
+        *self.dirty.borrow_mut() = true;
+    }
+
+    #[inline]
+    fn clear_dirty(&self) {
+        *self.dirty.borrow_mut() = false;
+    }
 }
 
 impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
@@ -68,6 +84,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             root: Rc::new(RefCell::new(root)),
             nodes: list,
             last_seq: RefCell::new(K::default()),
+            dirty: RefCell::new(false),
         }
     }
 
@@ -103,6 +120,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         if !self.root.borrow().get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::AlreadyExists, ""));
         }
+        self.set_dirty();
         let next_seq = self.get_next_seq().into() as usize;
         self.root.borrow_mut().insert(next_seq, &key, &val);
         Ok(())
