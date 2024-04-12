@@ -179,7 +179,7 @@ impl<'a, K, V> BMap<'a, K, V>
     pub fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return Vec::new();
+                return direct.lookup_dirty();
             },
             NodeType::Btree(btree) => {
                 return btree.lookup_dirty();

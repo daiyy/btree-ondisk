@@ -67,6 +67,14 @@ impl<'a, K, V> DirectMap<'a, K, V>
     fn clear_dirty(&self) {
         *self.dirty.borrow_mut() = false;
     }
+
+    pub(crate) fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
+        let mut v = Vec::new();
+        if self.is_dirty() {
+            v.push(self.root.clone());
+        }
+        v
+    }
 }
 
 impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
