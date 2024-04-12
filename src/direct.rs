@@ -177,4 +177,14 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         }
         Err(Error::new(ErrorKind::NotFound, ""))
     }
+
+    async fn assign(&self, key: K, newval: V, _: bool) -> Result<()> {
+        let index = key.into() as usize;
+        let val = self.root.borrow().get_val(index);
+        if val.is_invalid() {
+            return Err(Error::new(ErrorKind::InvalidData, ""));
+        }
+        self.root.borrow_mut().set_val(index, &newval);
+        Ok(())
+    }
 }

@@ -21,6 +21,7 @@ pub trait VMap<K, V>
     async fn delete(&self, key: K) -> Result<()>;
     async fn seek_key(&self, start: K) -> Result<K>;
     async fn last_key(&self) -> Result<K>;
+    async fn assign(&self, key: K, val: V, is_meta: bool) -> Result<()>;
 }
 
 trait InvalidValue<V> {

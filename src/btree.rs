@@ -1005,4 +1005,39 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
         let path = BtreePath::new();
         self.do_lookup_last(&path).await
     }
+
+    async fn assign(&self, key: K, newval: V, is_meta: bool) -> Result<()> {
+
+        let search_key;
+        let level;
+        if is_meta {
+            // if this is meta node, we search from meta nodes list
+            let list = self.nodes.borrow();
+            if let Some(node) = list.get(&key) {
+                let clone = node.clone();
+                let node_key = r!(clone).get_key(0);
+                let node_level = r!(clone).get_level();
+                search_key = node_key;
+                level = node_level;
+            } else {
+                panic!("unable to find node key {} during assign", key);
+            }
+        } else {
+            search_key = key;
+            level = BTREE_NODE_LEVEL_DATA;
+        };
+
+        let path = BtreePath::new();
+        let _ = self.do_lookup(&path, &search_key, level + 1).await?;
+        let parent = self.get_node(&path, level + 1);
+        let pindex = path.get_index(level + 1);
+
+        if is_meta {
+            // get back oldkey
+            let _ = r!(parent).get_val(pindex);
+        }
+
+        w!(parent).set_val(pindex, &newval);
+        Ok(())
+    }
 }
