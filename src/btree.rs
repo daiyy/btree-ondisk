@@ -567,7 +567,16 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         if is_meta {
             // get back oldkey
-            let _ = r!(parent).get_val(pindex);
+            let oldval = r!(parent).get_val(pindex);
+
+            let mut list = self.nodes.borrow_mut();
+            // remove node from list via old temp val
+            if let Some(node) = list.remove(&oldval) {
+                // insert back with new val
+                list.insert(newval, node);
+            } else {
+                panic!("old value {} is not on nodes list, THIS SHOULD NOT HAPPEN", oldval);
+            }
         }
 
         w!(parent).set_val(pindex, &newval);
