@@ -15,6 +15,7 @@ pub struct DirectMap<'a, K, V> {
     pub nodes: RefCell<HashMap<K, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
     pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
+    pub meta_block_size: usize,
 }
 
 impl<'a, K, V> fmt::Display for DirectMap<'a, K, V>
@@ -96,7 +97,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         K: From<V> + Into<u64>,
         V: From<K> + NodeValue<V>
 {
-    fn new(data: Vec<u8>) -> Self {
+    fn new(data: Vec<u8>, meta_block_size: usize) -> Self {
         let root = BtreeNode::<K, V>::from_slice(&data);
         let mut list = RefCell::new(HashMap::new());
 
@@ -106,6 +107,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             nodes: list,
             last_seq: RefCell::new(V::invalid_value()),
             dirty: RefCell::new(false),
+            meta_block_size: meta_block_size,
         }
     }
 

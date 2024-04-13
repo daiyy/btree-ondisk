@@ -139,6 +139,7 @@ pub struct BtreeMap<'a, K, V> {
     pub nodes: RefCell<HashMap<V, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
     pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
+    pub meta_block_size: usize,
 }
 
 impl<'a, K, V> fmt::Display for BtreeMap<'a, K, V>
@@ -230,7 +231,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             return Ok(node.clone());
         }
 
-        if let Some(node) = BtreeNode::<K, V>::new(val, 4096) {
+        if let Some(node) = BtreeNode::<K, V>::new(val, self.meta_block_size) {
             let n = Rc::new(RefCell::new(node));
             list.insert(val, n.clone());
             return Ok(n);
@@ -240,7 +241,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
     pub(crate) async fn get_new_node(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
         let mut list = self.nodes.borrow_mut();
-        if let Some(node) = BtreeNode::<K, V>::new(val, 4096) {
+        if let Some(node) = BtreeNode::<K, V>::new(val, self.meta_block_size) {
             let n = Rc::new(RefCell::new(node));
             if let Some(oldnode) = list.insert(val, n.clone()) {
                 panic!("value {} is already in nodes list", val);
@@ -932,7 +933,7 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
         K: From<V>,
         V: From<K> + NodeValue<V>
 {
-    fn new(data: Vec<u8>) -> Self {
+    fn new(data: Vec<u8>, meta_blksz: usize) -> Self {
         let root = BtreeNode::<K, V>::from_slice(&data);
         let mut list = RefCell::new(HashMap::new());
 
@@ -942,6 +943,7 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
             nodes: list,
             last_seq: RefCell::new(V::default()),
             dirty: RefCell::new(false),
+            meta_block_size: meta_blksz,
         }
     }
 

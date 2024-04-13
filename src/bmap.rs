@@ -53,7 +53,7 @@ impl<'a, K, V> BMap<'a, K, V>
         K: From<V> + Into<u64>,
         V: From<K> + NodeValue<V>
 {
-    async fn convert_and_insert(&mut self, data: Vec<u8>, last_seq: V, key: K, val: V) -> Result<()> {
+    async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: V, key: K, val: V) -> Result<()> {
         // create new btree map
         let mut v = Vec::with_capacity(data.len());
         v.extend(&data);
@@ -63,6 +63,7 @@ impl<'a, K, V> BMap<'a, K, V>
             nodes: RefCell::new(HashMap::new()),
             last_seq: RefCell::new(last_seq),
             dirty: RefCell::new(true),
+            meta_block_size: meta_block_size,
         };
 
         let first_root_key;
@@ -112,10 +113,10 @@ impl<'a, K, V> BMap<'a, K, V>
         K: From<V> + Into<u64>,
         V: From<K> + NodeValue<V>
 {
-    pub fn new(data: Vec<u8>) -> Self {
+    pub fn new(data: Vec<u8>, meta_block_size: usize) -> Self {
         // start from small
         Self {
-            inner: NodeType::Direct(DirectMap::<K, V>::new(data)),
+            inner: NodeType::Direct(DirectMap::<K, V>::new(data, meta_block_size)),
         }
     }
 
@@ -126,7 +127,8 @@ impl<'a, K, V> BMap<'a, K, V>
                     // convert and insert
                     let data = direct.data.clone();
                     let last_seq = direct.last_seq.take();
-                    return self.convert_and_insert(data, last_seq, key, val).await;
+                    let meta_block_size = direct.meta_block_size;
+                    return self.convert_and_insert(data, meta_block_size, last_seq, key, val).await;
                 }
                 return direct.insert(key, val).await;
             },
