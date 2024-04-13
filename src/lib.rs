@@ -24,19 +24,19 @@ pub trait VMap<K, V>
     async fn last_key(&self) -> Result<K>;
 }
 
-trait InvalidValue<V> {
+trait NodeValue<V> {
     fn is_invalid(&self) -> bool;
     fn invalid_value() -> V;
 }
 
-impl<V> InvalidValue<V> for u64
+impl<V> NodeValue<V> for u64
     where V: From<u64>
 {
     fn is_invalid(&self) -> bool {
-        self == &std::u64::MAX
+        self == &u64::MIN 
     }
 
     fn invalid_value() -> V {
-       u64::MAX.into()
+       u64::MIN.into()
     }
 }

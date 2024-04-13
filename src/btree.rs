@@ -4,9 +4,11 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::ops::{Deref, DerefMut};
 use std::borrow::{Borrow, BorrowMut};
+use log::warn;
 use tokio::io::{Error, ErrorKind, Result};
 use crate::node::*;
 use crate::VMap;
+use crate::NodeValue;
 
 pub(crate) type BtreeLevel = usize;
 pub(crate) type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
@@ -54,7 +56,7 @@ pub struct BtreePath<'a, K, V> {
     levels: Vec<RefCell<BtreePathLevel<'a, K, V>>>,
 }
 
-impl<'a, K, V: Copy + Default> BtreePath<'a, K, V>
+impl<'a, K, V: Copy + Default + NodeValue<V>> BtreePath<'a, K, V>
 {
     pub fn new() -> Self {
         let mut l = Vec::with_capacity(BTREE_NODE_LEVEL_MAX);
@@ -63,8 +65,8 @@ impl<'a, K, V: Copy + Default> BtreePath<'a, K, V>
                 node: None,
                 sib_node: None,
                 index: 0,
-                oldseq: V::default(),
-                newseq: V::default(),
+                oldseq: V::invalid_value(),
+                newseq: V::invalid_value(),
                 op: BtreeMapOp::Nop,
             }));
         }
@@ -159,7 +161,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V>,
-        V: From<K>,
+        V: From<K> + NodeValue<V>
 {
     #[inline]
     fn get_root_node(&self) -> BtreeNodeRef<'a, K, V> {
@@ -272,7 +274,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             BtreeMapOp::Nop => self.op_nop(path, level, key, val),
             _ => panic!("{:?} not yet implement", path.get_op(level)),
         }
-    }
+}
 
     async fn do_lookup<'s>(&'s self, path: &'s BtreePath<'a, K, V>, key: &K, minlevel: usize) -> Result<V> {
         let root = self.get_root_node();
@@ -299,7 +301,10 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             if index < (*node).borrow().get_nchild() {
                 value = (*node).borrow().get_val(index);
             } else {
-                value = V::default();
+                if found || level != BTREE_NODE_LEVEL_MIN {
+                    warn!("index {} - level {} - found {}", index, level, found);
+                }
+                value = V::invalid_value();
             }
 
             path.set_nonroot_node(level, node);
@@ -590,7 +595,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V>,
-        V: From<K>
+        V: From<K> + NodeValue<V>
 {
     fn op_insert(&self, path: &BtreePath<'_, K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
         let index = path.get_index(level);
@@ -925,7 +930,7 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V>,
-        V: From<K>
+        V: From<K> + NodeValue<V>
 {
     fn new(data: Vec<u8>) -> Self {
         let root = BtreeNode::<K, V>::from_slice(&data);

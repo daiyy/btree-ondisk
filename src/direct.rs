@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use tokio::io::{Error, ErrorKind, Result};
 use crate::VMap;
-use crate::InvalidValue;
+use crate::NodeValue;
 use crate::node::*;
 
 type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
@@ -32,7 +32,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + InvalidValue<V>
+        V: From<K> + NodeValue<V>
 {
     #[inline]
     fn get_next_seq(&self) -> V {
@@ -94,7 +94,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + InvalidValue<V>
+        V: From<K> + NodeValue<V>
 {
     fn new(data: Vec<u8>) -> Self {
         let root = BtreeNode::<K, V>::from_slice(&data);
@@ -104,7 +104,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             data: data,
             root: Rc::new(RefCell::new(root)),
             nodes: list,
-            last_seq: RefCell::new(V::default()),
+            last_seq: RefCell::new(V::invalid_value()),
             dirty: RefCell::new(false),
         }
     }

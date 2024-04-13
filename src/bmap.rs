@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use tokio::io::Result;
 use crate::VMap;
-use crate::InvalidValue;
+use crate::NodeValue;
 use crate::direct::DirectMap;
 use crate::btree::BtreeMap;
 use crate::node::BtreeNode;
@@ -51,7 +51,7 @@ impl<'a, K, V> BMap<'a, K, V>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + InvalidValue<V>
+        V: From<K> + NodeValue<V>
 {
     async fn convert_and_insert(&mut self, data: Vec<u8>, last_seq: V, key: K, val: V) -> Result<()> {
         // create new btree map
@@ -110,7 +110,7 @@ impl<'a, K, V> BMap<'a, K, V>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + InvalidValue<V>
+        V: From<K> + NodeValue<V>
 {
     pub fn new(data: Vec<u8>) -> Self {
         // start from small
