@@ -13,7 +13,7 @@ pub struct DirectMap<'a, K, V> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V>,
     pub nodes: RefCell<HashMap<K, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
-    pub last_seq: RefCell<K>,
+    pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
 }
 
@@ -30,18 +30,20 @@ impl<'a, K, V> fmt::Display for DirectMap<'a, K, V>
 impl<'a, K, V> DirectMap<'a, K, V>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + From<K>,
-        K: From<V> + Into<u64>
+        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        K: From<V> + Into<u64>,
+        V: From<K> + InvalidValue<V>
 {
     #[inline]
-    fn get_next_seq(&self) -> K {
+    fn get_next_seq(&self) -> V {
         let old_value = *self.last_seq.borrow();
         *self.last_seq.borrow_mut() += 1;
         old_value
     }
 
+    #[allow(dead_code)]
     #[inline]
-    fn get_val(&self) -> K {
+    fn get_val(&self) -> V {
         *self.last_seq.borrow_mut() += 1;
         *self.last_seq.borrow()
     }
@@ -75,13 +77,24 @@ impl<'a, K, V> DirectMap<'a, K, V>
         }
         v
     }
+
+    pub(crate) async fn assign(&self, key: K, newval: V, _: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+        let index = key.into() as usize;
+        let val = self.root.borrow().get_val(index);
+        if val.is_invalid() {
+            return Err(Error::new(ErrorKind::InvalidData, ""));
+        }
+        self.root.borrow_mut().set_val(index, &newval);
+        Ok(())
+    }
 }
 
 impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + From<K> + InvalidValue<V>,
-        K: From<V> + Into<u64>
+        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        K: From<V> + Into<u64>,
+        V: From<K> + InvalidValue<V>
 {
     fn new(data: Vec<u8>) -> Self {
         let root = BtreeNode::<K, V>::from_slice(&data);
@@ -91,7 +104,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             data: data,
             root: Rc::new(RefCell::new(root)),
             nodes: list,
-            last_seq: RefCell::new(K::default()),
+            last_seq: RefCell::new(V::default()),
             dirty: RefCell::new(false),
         }
     }
@@ -129,8 +142,8 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             return Err(Error::new(ErrorKind::AlreadyExists, ""));
         }
         self.set_dirty();
-        let next_seq = self.get_next_seq().into() as usize;
-        self.root.borrow_mut().insert(next_seq, &key, &val);
+        let index = key.into() as usize;
+        self.root.borrow_mut().insert(index, &key, &val);
         Ok(())
     }
 
@@ -176,15 +189,5 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             Ok::<K, Error>(last_key.unwrap());
         }
         Err(Error::new(ErrorKind::NotFound, ""))
-    }
-
-    async fn assign(&self, key: K, newval: V, _: bool) -> Result<()> {
-        let index = key.into() as usize;
-        let val = self.root.borrow().get_val(index);
-        if val.is_invalid() {
-            return Err(Error::new(ErrorKind::InvalidData, ""));
-        }
-        self.root.borrow_mut().set_val(index, &newval);
-        Ok(())
     }
 }

@@ -10,9 +10,10 @@ mod utils;
 
 pub trait VMap<K, V>
     where
-        K: Copy + Default + fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + fmt::Display + From<K>,
-        K: From<V>
+        K: Copy + Default + fmt::Display + PartialOrd + Eq + std::hash::Hash,
+        V: Copy + Default + fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        K: From<V>,
+        V: From<K>
 {
     fn new(data: Vec<u8>) -> Self;
     async fn lookup(&self, key: K, level: usize) -> Result<V>;
@@ -21,7 +22,6 @@ pub trait VMap<K, V>
     async fn delete(&self, key: K) -> Result<()>;
     async fn seek_key(&self, start: K) -> Result<K>;
     async fn last_key(&self) -> Result<K>;
-    async fn assign(&self, key: K, val: V, is_meta: bool) -> Result<()>;
 }
 
 trait InvalidValue<V> {

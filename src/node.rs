@@ -18,7 +18,7 @@ pub struct BtreeNode<'a, K, V> {
     capacity: usize,    // kv capacity of this btree node
     ptr: *const u8,
     size: usize,
-    id: Option<K>,
+    id: Option<V>,
     dirty: bool,
 }
 
@@ -65,7 +65,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         }
     }
 
-    pub fn new(k: K, size: usize) -> Option<Self> {
+    pub fn new(v: V, size: usize) -> Option<Self> {
         if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
             let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
             if ptr.is_null() {
@@ -75,7 +75,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
             let data = unsafe { std::slice::from_raw_parts(ptr, size) };
             let mut node = Self::from_slice(data);
             node.ptr = ptr;
-            node.id = Some(k);
+            node.id = Some(v);
             return Some(node);
         };
         None
@@ -174,7 +174,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn id(&self) -> Option<&K> {
+    pub fn id(&self) -> Option<&V> {
         self.id.as_ref()
     }
 

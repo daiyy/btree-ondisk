@@ -45,8 +45,8 @@ struct BtreePathLevel<'a, K, V> {
     node: Option<BtreeNodeRef<'a, K, V>>,
     sib_node: Option<BtreeNodeRef<'a, K, V>>,
     index: usize,
-    oldseq: K,
-    newseq: K,
+    oldseq: V,
+    newseq: V,
     op: BtreeMapOp,
 }
 
@@ -54,7 +54,7 @@ pub struct BtreePath<'a, K, V> {
     levels: Vec<RefCell<BtreePathLevel<'a, K, V>>>,
 }
 
-impl<'a, K: Default + Copy, V> BtreePath<'a, K, V>
+impl<'a, K, V: Copy + Default> BtreePath<'a, K, V>
 {
     pub fn new() -> Self {
         let mut l = Vec::with_capacity(BTREE_NODE_LEVEL_MAX);
@@ -63,8 +63,8 @@ impl<'a, K: Default + Copy, V> BtreePath<'a, K, V>
                 node: None,
                 sib_node: None,
                 index: 0,
-                oldseq: K::default(),
-                newseq: K::default(),
+                oldseq: V::default(),
+                newseq: V::default(),
                 op: BtreeMapOp::Nop,
             }));
         }
@@ -106,19 +106,19 @@ impl<'a, K: Default + Copy, V> BtreePath<'a, K, V>
         self.levels[level].borrow_mut().sib_node = None;
     }
 
-    pub fn get_new_seq(&self, level: usize) -> K {
+    pub fn get_new_seq(&self, level: usize) -> V {
         self.levels[level].borrow().newseq
     }
 
-    pub fn set_new_seq(&self, level: usize, seq: K) {
+    pub fn set_new_seq(&self, level: usize, seq: V) {
         self.levels[level].borrow_mut().newseq = seq;
     }
 
-    pub fn get_old_seq(&self, level: usize) -> K {
+    pub fn get_old_seq(&self, level: usize) -> V {
         self.levels[level].borrow().oldseq
     }
 
-    pub fn set_old_seq(&self, level: usize, seq: K) {
+    pub fn set_old_seq(&self, level: usize, seq: V) {
         self.levels[level].borrow_mut().oldseq = seq;
     }
 
@@ -134,8 +134,8 @@ impl<'a, K: Default + Copy, V> BtreePath<'a, K, V>
 pub struct BtreeMap<'a, K, V> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V>,
-    pub nodes: RefCell<HashMap<K, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
-    pub last_seq: RefCell<K>,
+    pub nodes: RefCell<HashMap<V, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
+    pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
 }
 
@@ -146,9 +146,9 @@ impl<'a, K, V> fmt::Display for BtreeMap<'a, K, V>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", (*self.root).borrow());
-        for (k, node) in self.nodes.borrow().iter() {
+        for (v, node) in self.nodes.borrow().iter() {
             let n: Rc<RefCell<BtreeNode<'a, K, V>>> = node.clone();
-            write!(f, "{} - {}", k, (*n).borrow());
+            write!(f, "{} - {}", v, (*n).borrow());
         }
         write!(f, "")
     }
@@ -157,8 +157,9 @@ impl<'a, K, V> fmt::Display for BtreeMap<'a, K, V>
 impl<'a, K, V> BtreeMap<'a, K, V>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + From<K>,
-        K: From<V>
+        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        K: From<V>,
+        V: From<K>,
 {
     #[inline]
     fn get_root_node(&self) -> BtreeNodeRef<'a, K, V> {
@@ -194,13 +195,13 @@ impl<'a, K, V> BtreeMap<'a, K, V>
     }
 
     #[inline]
-    fn get_next_seq(&self) -> K {
+    fn get_next_seq(&self) -> V {
         *self.last_seq.borrow_mut() += 1;
         *self.last_seq.borrow()
     }
 
     #[inline]
-    fn prepare_seq(&self, path: &BtreePath<K, V>, level: usize) -> K {
+    fn prepare_seq(&self, path: &BtreePath<K, V>, level: usize) -> V {
         let seq = self.get_next_seq();
         path.set_new_seq(level, seq);
         seq
@@ -221,22 +222,30 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         *self.dirty.borrow_mut() = false;
     }
 
-    pub async fn get_from_nodes(&self, key: K) -> Result<BtreeNodeRef<'a, K, V>> {
+    pub(crate) async fn get_from_nodes(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
         let mut list = self.nodes.borrow_mut();
-        if let Some(node) = list.get(&key) {
+        if let Some(node) = list.get(&val) {
             return Ok(node.clone());
         }
 
-        if let Some(node) = BtreeNode::<K, V>::new(key, 4096) {
+        if let Some(node) = BtreeNode::<K, V>::new(val, 4096) {
             let n = Rc::new(RefCell::new(node));
-            list.insert(key, n.clone());
+            list.insert(val, n.clone());
             return Ok(n);
         }
         return Err(Error::new(ErrorKind::OutOfMemory, ""));
     }
 
-    async fn get_new_node(&self) -> Result<&BtreeNode<K, V>> {
-        todo!();
+    pub(crate) async fn get_new_node(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
+        let mut list = self.nodes.borrow_mut();
+        if let Some(node) = BtreeNode::<K, V>::new(val, 4096) {
+            let n = Rc::new(RefCell::new(node));
+            if let Some(oldnode) = list.insert(val, n.clone()) {
+                panic!("value {} is already in nodes list", val);
+            }
+            return Ok(n);
+        }
+        return Err(Error::new(ErrorKind::OutOfMemory, ""));
     }
 
     fn remove_from_nodes(&self, node: BtreeNodeRef<K, V>) -> Result<()> {
@@ -279,7 +288,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         level -= 1;
         while level >= minlevel {
-            let node = self.get_from_nodes(value.into()).await?;
+            let node = self.get_from_nodes(value).await?;
 
             if !found {
                 (found, index) = (*node).borrow().lookup(key);
@@ -318,7 +327,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         level -= 1;
         while level > 0 {
-            node = self.get_from_nodes(value.into()).await?;
+            node = self.get_from_nodes(value).await?;
             index = r!(node).get_nchild() - 1;
             value = r!(node).get_val(index);
             path.set_nonroot_node(level, node.clone());
@@ -349,7 +358,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             // left sibling
             if pindex > 0 {
                 let sib_val = (*parent).borrow().get_val(pindex - 1);
-                let sib_node = self.get_from_nodes(sib_val.into()).await?;
+                let sib_node = self.get_from_nodes(sib_val).await?;
                 if (*sib_node).borrow().has_free_slots() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::CarryLeft);
@@ -360,7 +369,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             // right sibling
             if pindex < (*parent).borrow().get_nchild() - 1 {
                 let sib_val = (*parent).borrow().get_val(pindex + 1);
-                let sib_node = self.get_from_nodes(sib_val.into()).await?;
+                let sib_node = self.get_from_nodes(sib_val).await?;
                 if (*sib_node).borrow().has_free_slots() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::CarryRight);
@@ -372,7 +381,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
             // both left and right sibling has no free slots
             // prepare a new node and split myself
             let seq = self.prepare_seq(path, level);
-            let node = self.get_from_nodes(seq).await?;
+            let node = self.get_new_node(seq).await?;
             (*node).borrow_mut().init(0, level, 0);
             path.set_sib_node(level, node);
             path.set_op(level, BtreeMapOp::Split);
@@ -389,7 +398,7 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 
         // grow
         let seq = self.prepare_seq(path, level);
-        let node = self.get_from_nodes(seq).await?;
+        let node = self.get_new_node(seq).await?;
         (*node).borrow_mut().init(0, level, 0);
         path.set_sib_node(level, node);
         path.set_op(level, BtreeMapOp::Grow);
@@ -539,14 +548,40 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         }
         v
     }
+
+    pub(crate) async fn assign(&self, key: K, newval: V, meta_node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+
+        let (search_key, level, is_meta) = if let Some(node) = meta_node {
+            // if this is meta node, we use node key as search key to search in parent node
+            let node_key = r!(node).get_key(0);
+            let node_level = r!(node).get_level();
+            (node_key, node_level, true)
+        } else {
+            (key, BTREE_NODE_LEVEL_DATA, false)
+        };
+
+        let path = BtreePath::new();
+        let _ = self.do_lookup(&path, &search_key, level + 1).await?;
+        let parent = self.get_node(&path, level + 1);
+        let pindex = path.get_index(level + 1);
+
+        if is_meta {
+            // get back oldkey
+            let _ = r!(parent).get_val(pindex);
+        }
+
+        w!(parent).set_val(pindex, &newval);
+        Ok(())
+    }
 }
 
 // all op_* functions
 impl<'a, K, V> BtreeMap<'a, K, V>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + From<K>,
-        K: From<V>
+        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        K: From<V>,
+        V: From<K>
 {
     fn op_insert(&self, path: &BtreePath<'_, K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
         let index = path.get_index(level);
@@ -879,8 +914,9 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + From<K>,
-        K: From<V>
+        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        K: From<V>,
+        V: From<K>
 {
     fn new(data: Vec<u8>) -> Self {
         let root = BtreeNode::<K, V>::from_slice(&data);
@@ -890,7 +926,7 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
             data: data,
             root: Rc::new(RefCell::new(root)),
             nodes: list,
-            last_seq: RefCell::new(K::default()),
+            last_seq: RefCell::new(V::default()),
             dirty: RefCell::new(false),
         }
     }
@@ -1004,40 +1040,5 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
     async fn last_key(&self) -> Result<K> {
         let path = BtreePath::new();
         self.do_lookup_last(&path).await
-    }
-
-    async fn assign(&self, key: K, newval: V, is_meta: bool) -> Result<()> {
-
-        let search_key;
-        let level;
-        if is_meta {
-            // if this is meta node, we search from meta nodes list
-            let list = self.nodes.borrow();
-            if let Some(node) = list.get(&key) {
-                let clone = node.clone();
-                let node_key = r!(clone).get_key(0);
-                let node_level = r!(clone).get_level();
-                search_key = node_key;
-                level = node_level;
-            } else {
-                panic!("unable to find node key {} during assign", key);
-            }
-        } else {
-            search_key = key;
-            level = BTREE_NODE_LEVEL_DATA;
-        };
-
-        let path = BtreePath::new();
-        let _ = self.do_lookup(&path, &search_key, level + 1).await?;
-        let parent = self.get_node(&path, level + 1);
-        let pindex = path.get_index(level + 1);
-
-        if is_meta {
-            // get back oldkey
-            let _ = r!(parent).get_val(pindex);
-        }
-
-        w!(parent).set_val(pindex, &newval);
-        Ok(())
     }
 }

@@ -49,10 +49,11 @@ impl<'a, K, V> fmt::Display for BMap<'a, K, V>
 impl<'a, K, V> BMap<'a, K, V>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + From<K> + InvalidValue<V>,
-        K: From<V> + Into<u64>
+        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        K: From<V> + Into<u64>,
+        V: From<K> + InvalidValue<V>
 {
-    async fn convert_and_insert(&mut self, data: Vec<u8>, last_seq: K, key: K, val: V) -> Result<()> {
+    async fn convert_and_insert(&mut self, data: Vec<u8>, last_seq: V, key: K, val: V) -> Result<()> {
         // create new btree map
         let mut v = Vec::with_capacity(data.len());
         v.extend(&data);
@@ -68,7 +69,7 @@ impl<'a, K, V> BMap<'a, K, V>
         // create child node @level 1
         {
 
-        let mut node = btree.get_from_nodes(last_seq).await?;
+        let mut node = btree.get_new_node(last_seq).await?;
         (*node).borrow_mut().set_flags(0);
         (*node).borrow_mut().set_nchild(0);
         (*node).borrow_mut().set_level(1);
@@ -94,8 +95,7 @@ impl<'a, K, V> BMap<'a, K, V>
         let mut root = btree.root.borrow_mut();
         root.set_nchild(0);
         root.init_root(2);
-        let seq: V = V::from(last_seq);
-        root.insert(0, &first_root_key, &seq);
+        root.insert(0, &first_root_key, &last_seq);
 
         }
 
@@ -108,8 +108,9 @@ impl<'a, K, V> BMap<'a, K, V>
 impl<'a, K, V> BMap<'a, K, V>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + From<K> + InvalidValue<V>,
-        K: From<V> + Into<u64>
+        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        K: From<V> + Into<u64>,
+        V: From<K> + InvalidValue<V>
 {
     pub fn new(data: Vec<u8>) -> Self {
         // start from small
@@ -205,6 +206,17 @@ impl<'a, K, V> BMap<'a, K, V>
             },
             NodeType::Btree(btree) => {
                 return btree.last_key().await;
+            },
+        }
+    }
+
+    pub async fn assign(&self, key: K, newval: V, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.assign(key, newval, node).await;
+            },
+            NodeType::Btree(btree) => {
+                return btree.assign(key, newval, node).await;
             },
         }
     }
