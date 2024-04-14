@@ -29,7 +29,6 @@ pub trait NodeValue<V> {
 }
 
 pub trait BlockLoader<V> {
-    fn null() -> Self;
     async fn read(&self, v: &V, buf: &mut [u8]) -> Result<()>;
 }
 
@@ -46,10 +45,6 @@ impl<V> NodeValue<V> for u64
 }
 
 impl<V> BlockLoader<V> for u64 {
-    fn null() -> Self {
-        u64::MAX
-    }
-
     async fn read(&self, v: &V, buf: &mut [u8]) -> Result<()> {
         Ok(())
     }
