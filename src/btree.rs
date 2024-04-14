@@ -604,6 +604,15 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         w!(parent).set_val(pindex, &newval);
         Ok(())
     }
+
+    pub(crate) async fn mark(&self, key: K, level: usize) -> Result<()> {
+        let path = BtreePath::new();
+        let val = self.do_lookup(&path, &key, level + 1).await?;
+        let node = self.get_from_nodes(val.into()).await?;
+        w!(node).mark_dirty();
+        self.set_dirty();
+        Ok(())
+    }
 }
 
 // all op_* functions

@@ -229,4 +229,15 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             },
         }
     }
+
+    pub async fn mark(&self, key: K, level: usize) -> Result<()> {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return Ok(());
+            },
+            NodeType::Btree(btree) => {
+                return btree.mark(key, level).await;
+            },
+        }
+    }
 }
