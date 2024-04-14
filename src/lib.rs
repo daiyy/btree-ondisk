@@ -23,7 +23,7 @@ pub trait VMap<K, V>
     async fn last_key(&self) -> Result<K>;
 }
 
-trait NodeValue<V> {
+pub trait NodeValue<V> {
     fn is_invalid(&self) -> bool;
     fn invalid_value() -> V;
 }
