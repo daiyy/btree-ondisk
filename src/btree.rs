@@ -239,7 +239,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         }
 
         if let Some(mut node) = BtreeNode::<K, V>::new(val, self.meta_block_size) {
-            //self.meta_block_loader(&val, node.as_mut()).await?;
+            self.meta_block_loader(&val, node.as_mut()).await?;
             let n = Rc::new(RefCell::new(node));
             list.insert(val, n.clone());
             return Ok(n);
