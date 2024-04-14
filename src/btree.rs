@@ -192,7 +192,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
     #[inline]
     fn is_root_level(&self, level: usize) -> bool {
-        level >= self.get_height() - 1
+        level == self.get_height() - 1
     }
 
     #[inline]
@@ -522,8 +522,13 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
                 (*node).borrow_mut().set_key(index, key);
                 w!(node).mark_dirty();
 
+                if index != 0 {
+                    // break if it is not first one in the node
+                    // we don't need to promote upper level any more
+                    break;
+                }
                 level += 1;
-                if index != 0 || self.is_root_level(level) {
+                if self.is_root_level(level) {
                     break;
                 }
             }
@@ -611,22 +616,21 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         L: BlockLoader<V>,
 {
     fn op_insert(&self, path: &BtreePath<'_, K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
-        let index = path.get_index(level);
         if self.is_nonroot_level(level) {
             // non root node
             let node = path.get_nonroot_node(level);
 
-            (*node).borrow_mut().insert(index, key, val);
+            (*node).borrow_mut().insert(path.get_index(level), key, val);
             w!(node).mark_dirty();
 
-            if index == 0 {
+            if path.get_index(level) == 0 {
                 let node_key = (*node).borrow().get_key(0);
                 self.promote_key(path, level + 1, &node_key);
             }
         } else {
             // root node
             let root = self.get_root_node();
-            (*root).borrow_mut().insert(index, key, val);
+            (*root).borrow_mut().insert(path.get_index(level), key, val);
         }
     }
 
