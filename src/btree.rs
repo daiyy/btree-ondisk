@@ -594,6 +594,8 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             let mut list = self.nodes.borrow_mut();
             // remove node from list via old temp val
             if let Some(node) = list.remove(&oldval) {
+                // update node id
+                w!(node).set_id(newval);
                 // insert back with new val
                 list.insert(newval, node);
             } else {

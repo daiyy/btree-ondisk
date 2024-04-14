@@ -204,6 +204,11 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
+    pub fn set_id(&mut self, v: V) {
+        self.id = Some(v);
+    }
+
+    #[inline]
     pub fn init(&mut self, flags: usize, level: usize, nchild: usize) {
         self.set_flags(flags);
         self.set_level(level);
