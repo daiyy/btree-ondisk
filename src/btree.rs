@@ -228,6 +228,10 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         *self.dirty.borrow_mut() = false;
     }
 
+    pub fn as_slice(&self) -> &[u8] {
+        self.data.as_slice()
+    }
+
     async fn meta_block_loader(&self, v: &V, buf: &mut [u8]) -> Result<()> {
         self.block_loader.read(v, buf).await
     }

@@ -141,6 +141,17 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    pub fn as_slice(&self) -> &[u8] {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.as_slice();
+            },
+            NodeType::Btree(btree) => {
+                return btree.as_slice();
+            },
+        }
+    }
+
     pub async fn do_insert(&mut self, key: K, val: V) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {

@@ -100,6 +100,12 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         None
     }
 
+    pub fn as_ref(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(self.ptr as *const u8, self.size)
+        }
+    }
+
     pub fn as_mut(&mut self) -> &mut [u8] {
         unsafe {
             std::slice::from_raw_parts_mut(self.ptr as *mut u8, self.size)
