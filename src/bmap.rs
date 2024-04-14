@@ -4,21 +4,22 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use tokio::io::Result;
 use crate::VMap;
-use crate::NodeValue;
+use crate::{NodeValue, BlockLoader};
 use crate::direct::DirectMap;
 use crate::btree::BtreeMap;
 use crate::node::BtreeNode;
 use crate::btree::BtreeNodeRef;
 
-pub enum NodeType<'a, K, V> {
+pub enum NodeType<'a, K, V, L: BlockLoader<V>> {
     Direct(DirectMap<'a, K, V>),
-    Btree(BtreeMap<'a, K, V>),
+    Btree(BtreeMap<'a, K, V, L>),
 }
 
-impl<'a, K, V> fmt::Display for NodeType<'a, K, V>
+impl<'a, K, V, L> fmt::Display for NodeType<'a, K, V, L>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display
+        V: Copy + fmt::Display,
+        L: BlockLoader<V>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -32,26 +33,29 @@ impl<'a, K, V> fmt::Display for NodeType<'a, K, V>
     }
 }
 
-pub struct BMap<'a, K, V> {
-    inner: NodeType<'a, K, V>,
+pub struct BMap<'a, K, V, L: BlockLoader<V>> {
+    inner: NodeType<'a, K, V, L>,
+    block_loader: Option<L>,
 }
 
-impl<'a, K, V> fmt::Display for BMap<'a, K, V>
+impl<'a, K, V, L> fmt::Display for BMap<'a, K, V, L>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display
+        V: Copy + fmt::Display,
+        L: BlockLoader<V>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.inner)
     }
 }
 
-impl<'a, K, V> BMap<'a, K, V>
+impl<'a, K, V, L> BMap<'a, K, V, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>
+        V: From<K> + NodeValue<V>,
+        L: BlockLoader<V>
 {
     async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: V, key: K, val: V) -> Result<()> {
         // create new btree map
@@ -64,6 +68,7 @@ impl<'a, K, V> BMap<'a, K, V>
             last_seq: RefCell::new(last_seq),
             dirty: RefCell::new(true),
             meta_block_size: meta_block_size,
+            block_loader: self.block_loader.take().unwrap(),
         };
 
         let first_root_key;
@@ -106,17 +111,19 @@ impl<'a, K, V> BMap<'a, K, V>
     }
 }
 
-impl<'a, K, V> BMap<'a, K, V>
+impl<'a, K, V, L> BMap<'a, K, V, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>
+        V: From<K> + NodeValue<V>,
+        L: BlockLoader<V>
 {
-    pub fn new(data: Vec<u8>, meta_block_size: usize) -> Self {
+    pub fn new(data: Vec<u8>, meta_block_size: usize, block_loader: L) -> Self {
         // start from small
         Self {
             inner: NodeType::Direct(DirectMap::<K, V>::new(data, meta_block_size)),
+            block_loader: Some(block_loader),
         }
     }
 

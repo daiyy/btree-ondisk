@@ -8,7 +8,7 @@ use log::warn;
 use tokio::io::{Error, ErrorKind, Result};
 use crate::node::*;
 use crate::VMap;
-use crate::NodeValue;
+use crate::{NodeValue, BlockLoader};
 
 pub(crate) type BtreeLevel = usize;
 pub(crate) type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
@@ -133,19 +133,21 @@ impl<'a, K, V: Copy + Default + NodeValue<V>> BtreePath<'a, K, V>
     }
 }
 
-pub struct BtreeMap<'a, K, V> {
+pub struct BtreeMap<'a, K, V, L: BlockLoader<V>> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V>,
     pub nodes: RefCell<HashMap<V, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
     pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
     pub meta_block_size: usize,
+    pub block_loader: L,
 }
 
-impl<'a, K, V> fmt::Display for BtreeMap<'a, K, V>
+impl<'a, K, V, L> fmt::Display for BtreeMap<'a, K, V, L>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display
+        V: Copy + fmt::Display,
+        L: BlockLoader<V>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", (*self.root).borrow());
@@ -157,12 +159,13 @@ impl<'a, K, V> fmt::Display for BtreeMap<'a, K, V>
     }
 }
 
-impl<'a, K, V> BtreeMap<'a, K, V>
+impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V>,
-        V: From<K> + NodeValue<V>
+        V: From<K> + NodeValue<V>,
+        L: BlockLoader<V>,
 {
     #[inline]
     fn get_root_node(&self) -> BtreeNodeRef<'a, K, V> {
@@ -225,13 +228,18 @@ impl<'a, K, V> BtreeMap<'a, K, V>
         *self.dirty.borrow_mut() = false;
     }
 
+    async fn meta_block_loader(&self, v: &V, buf: &mut [u8]) -> Result<()> {
+        self.block_loader.read(v, buf).await
+    }
+
     pub(crate) async fn get_from_nodes(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
         let mut list = self.nodes.borrow_mut();
         if let Some(node) = list.get(&val) {
             return Ok(node.clone());
         }
 
-        if let Some(node) = BtreeNode::<K, V>::new(val, self.meta_block_size) {
+        if let Some(mut node) = BtreeNode::<K, V>::new(val, self.meta_block_size) {
+            //self.meta_block_loader(&val, node.as_mut()).await?;
             let n = Rc::new(RefCell::new(node));
             list.insert(val, n.clone());
             return Ok(n);
@@ -591,12 +599,13 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 }
 
 // all op_* functions
-impl<'a, K, V> BtreeMap<'a, K, V>
+impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V>,
-        V: From<K> + NodeValue<V>
+        V: From<K> + NodeValue<V>,
+        L: BlockLoader<V>,
 {
     fn op_insert(&self, path: &BtreePath<'_, K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
         let index = path.get_index(level);
@@ -926,12 +935,13 @@ impl<'a, K, V> BtreeMap<'a, K, V>
 }
 
 // all up level api
-impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
+impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V>,
-        V: From<K> + NodeValue<V>
+        V: From<K> + NodeValue<V>,
+        L: BlockLoader<V>,
 {
     fn new(data: Vec<u8>, meta_blksz: usize) -> Self {
         let root = BtreeNode::<K, V>::from_slice(&data);
@@ -944,6 +954,7 @@ impl<'a, K, V> VMap<K, V> for BtreeMap<'a, K, V>
             last_seq: RefCell::new(V::default()),
             dirty: RefCell::new(false),
             meta_block_size: meta_blksz,
+            block_loader: BlockLoader::<V>::null(),
         }
     }
 

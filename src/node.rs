@@ -81,6 +81,31 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         None
     }
 
+    pub fn copy_from_slice(v: V, buf: &[u8]) -> Option<Self> {
+        let size = buf.len();
+        if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
+            let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
+            if ptr.is_null() {
+                return None;
+            }
+
+            let mut data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
+            // copy data from buf to inner data
+            data.copy_from_slice(buf);
+            let mut node = Self::from_slice(data);
+            node.ptr = ptr;
+            node.id = Some(v);
+            return Some(node);
+        };
+        None
+    }
+
+    pub fn as_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            std::slice::from_raw_parts_mut(self.ptr as *mut u8, self.size)
+        }
+    }
+
     #[inline]
     pub fn is_root(&self) -> bool {
         if (self.header.flags & BTREE_NODE_ROOT) == BTREE_NODE_ROOT {

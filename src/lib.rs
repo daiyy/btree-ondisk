@@ -29,6 +29,11 @@ trait NodeValue<V> {
     fn invalid_value() -> V;
 }
 
+pub trait BlockLoader<V> {
+    fn null() -> Self;
+    async fn read(&self, v: &V, buf: &mut [u8]) -> Result<()>;
+}
+
 impl<V> NodeValue<V> for u64
     where V: From<u64>
 {
@@ -38,5 +43,15 @@ impl<V> NodeValue<V> for u64
 
     fn invalid_value() -> V {
        u64::MIN.into()
+    }
+}
+
+impl<V> BlockLoader<V> for u64 {
+    fn null() -> Self {
+        u64::MAX
+    }
+
+    async fn read(&self, v: &V, buf: &mut [u8]) -> Result<()> {
+        Ok(())
     }
 }
