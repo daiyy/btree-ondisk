@@ -15,7 +15,6 @@ pub trait VMap<K, V>
         K: From<V>,
         V: From<K>
 {
-    fn new(data: Vec<u8>, meta_block_size: usize) -> Self;
     async fn lookup(&self, key: K, level: usize) -> Result<V>;
     async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)>;
     async fn insert(&self, key: K, val: V) -> Result<()>;

@@ -119,11 +119,25 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         V: From<K> + NodeValue<V>,
         L: BlockLoader<V>
 {
-    pub fn new(data: Vec<u8>, meta_block_size: usize, block_loader: L) -> Self {
+    pub fn new(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
         // start from small
         Self {
             inner: NodeType::Direct(DirectMap::<K, V>::new(data, meta_block_size)),
             block_loader: Some(block_loader),
+        }
+    }
+
+    pub fn new_direct(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
+        Self {
+            inner: NodeType::Direct(DirectMap::<K, V>::new(data, meta_block_size)),
+            block_loader: Some(block_loader),
+        }
+    }
+
+    pub fn new_btree(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
+        Self {
+            inner: NodeType::Btree(BtreeMap::<K, V, L>::new(data, meta_block_size, block_loader)),
+            block_loader: None,
         }
     }
 

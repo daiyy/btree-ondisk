@@ -283,7 +283,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             BtreeMapOp::Nop => self.op_nop(path, level, key, val),
             _ => panic!("{:?} not yet implement", path.get_op(level)),
         }
-}
+    }
 
     async fn do_lookup<'s>(&'s self, path: &'s BtreePath<'a, K, V>, key: &K, minlevel: usize) -> Result<V> {
         let root = self.get_root_node();
@@ -612,6 +612,20 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         w!(node).mark_dirty();
         self.set_dirty();
         Ok(())
+    }
+
+    pub(crate) fn new(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
+        let mut v = Vec::with_capacity(data.len());
+        v.extend_from_slice(data);
+        Self {
+            root: Rc::new(RefCell::new(BtreeNode::<K, V>::from_slice(&v))),
+            data: v,
+            nodes: RefCell::new(HashMap::new()),
+            last_seq: RefCell::new(V::invalid_value()),
+            dirty: RefCell::new(false),
+            meta_block_size: meta_block_size,
+            block_loader: block_loader,
+        }
     }
 }
 
@@ -959,21 +973,6 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
         V: From<K> + NodeValue<V>,
         L: BlockLoader<V>,
 {
-    fn new(data: Vec<u8>, meta_blksz: usize) -> Self {
-        let root = BtreeNode::<K, V>::from_slice(&data);
-        let mut list = RefCell::new(HashMap::new());
-
-        Self {
-            data: data,
-            root: Rc::new(RefCell::new(root)),
-            nodes: list,
-            last_seq: RefCell::new(V::default()),
-            dirty: RefCell::new(false),
-            meta_block_size: meta_blksz,
-            block_loader: BlockLoader::<V>::null(),
-        }
-    }
-
     async fn lookup(&self, key: K, level: usize) -> Result<V> {
         let path = BtreePath::new();
         let val = self.do_lookup(&path, &key, level).await?;
