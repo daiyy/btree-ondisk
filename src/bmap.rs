@@ -100,7 +100,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
 
         let mut root = btree.root.borrow_mut();
         root.set_nchild(0);
-        root.init_root(2);
+        root.init_root(2, true);
         root.insert(0, &first_root_key, &last_seq);
 
         }

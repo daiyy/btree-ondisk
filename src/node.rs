@@ -2,7 +2,7 @@ use std::ptr;
 use std::fmt;
 use crate::ondisk::BtreeNodeHeader;
 
-pub const BTREE_NODE_ROOT: u8 = 0x01;
+pub const BTREE_NODE_LARGE: u8 = 0x01;
 pub const BTREE_NODE_LEVEL_DATA: usize = 0x00;
 pub const BTREE_NODE_LEVEL_MIN: usize = BTREE_NODE_LEVEL_DATA + 1;
 pub const BTREE_NODE_LEVEL_MAX: usize = 14;
@@ -113,11 +113,21 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn is_root(&self) -> bool {
-        if (self.header.flags & BTREE_NODE_ROOT) == BTREE_NODE_ROOT {
+    pub fn is_large(&self) -> bool {
+        if (self.header.flags & BTREE_NODE_LARGE) == BTREE_NODE_LARGE {
             return true;
         }
         false
+    }
+
+    #[inline]
+    pub fn set_large(&mut self) {
+        self.header.flags |= BTREE_NODE_LARGE;
+    }
+
+    #[inline]
+    pub fn clear_large(&mut self) {
+        self.header.flags &= !BTREE_NODE_LARGE;
     }
 
     #[inline]
@@ -222,8 +232,10 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn init_root(&mut self, level: usize) {
-        self.header.flags = BTREE_NODE_ROOT;
+    pub fn init_root(&mut self, level: usize, is_large: bool) {
+        if is_large {
+            self.set_large();
+        }
         self.set_level(level);
     }
 
