@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::ops::{Deref, DerefMut};
 use std::borrow::{Borrow, BorrowMut};
-use log::warn;
+use log::{warn, debug};
 use tokio::io::{Error, ErrorKind, Result};
 use crate::node::*;
 use crate::VMap;
@@ -573,6 +573,8 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         } else {
             (key, BTREE_NODE_LEVEL_DATA, false)
         };
+        debug!("assign - key: {key}, newval: {newval}, is_meta: {is_meta}");
+        debug!("search at parent level: {}, search_key: {search_key}", level + 1);
 
         let path = BtreePath::new();
         let _ = self.do_lookup(&path, &search_key, level + 1).await?;
@@ -582,6 +584,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         if is_meta {
             // get back oldkey
             let oldval = r!(parent).get_val(pindex);
+            debug!("assign - get back meta node oldval {oldval}");
 
             let mut list = self.nodes.borrow_mut();
             // remove node from list via old temp val
