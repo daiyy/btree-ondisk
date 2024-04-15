@@ -265,4 +265,18 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             },
         }
     }
+
+    // read in root node from extenal buffer
+    pub fn read(buf: &[u8], meta_block_size: usize, block_loader: L) -> Self {
+        let root = BtreeNode::<K, V>::from_slice(buf);
+        if root.is_large() {
+            return Self::new_btree(buf, meta_block_size, block_loader);
+        }
+        return Self::new_direct(buf, meta_block_size, block_loader);
+    }
+
+    // write out root node to external buffer
+    pub fn write(&self, buf: &mut [u8]) {
+        buf.copy_from_slice(self.as_slice())
+    }
 }
