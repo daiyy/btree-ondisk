@@ -163,7 +163,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V>,
+        K: From<V> + Into<u64>,
         V: From<K> + NodeValue<V>,
         L: BlockLoader<V>,
 {
@@ -633,6 +633,52 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             block_loader: block_loader,
         }
     }
+
+    // for delete
+    pub(crate) async fn delete_check_and_gather(&self, key: K, v: &mut Vec<(K, V)>) -> Result<bool> {
+        let node;
+        let root = self.get_root_node();
+        let root_capacity = r!(root).get_capacity();
+        match self.get_height() {
+            2 => {
+                // if height is 2, we check root node
+                node = root;
+            },
+            3 => {
+               let nchild = r!(root).get_nchild();
+               if nchild > 1 {
+                   return Ok(false);
+               }
+                // get back only child node, wee need to check it
+               let val = r!(root).get_val(nchild - 1);
+               node = self.get_from_nodes(val.into()).await?;
+            },
+            _ => {
+                return Ok(false);
+            },
+        }
+
+        // convert all to u64 to compare
+        let nchild = r!(node).get_nchild();
+        let maxkey = r!(node).get_key(nchild - 1).into();
+        let next_maxkey = if nchild > 1 {
+            r!(node).get_key(nchild - 2).into()
+        } else {
+            0
+        };
+
+        // gather data to output vec
+        if (maxkey == key.into()) && (next_maxkey < root_capacity as u64) {
+            for i in 0..nchild {
+                let key = r!(node).get_key(i);
+                let val = r!(node).get_val(i);
+                v.push((key, val));
+            }
+            assert!(v.len() == nchild);
+            return Ok(true);
+        }
+        return Ok(false);
+    }
 }
 
 // all op_* functions
@@ -640,7 +686,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V>,
+        K: From<V> + Into<u64>,
         V: From<K> + NodeValue<V>,
         L: BlockLoader<V>,
 {
@@ -975,7 +1021,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V>,
+        K: From<V> + Into<u64>,
         V: From<K> + NodeValue<V>,
         L: BlockLoader<V>,
 {

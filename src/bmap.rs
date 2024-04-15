@@ -109,6 +109,30 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         self.inner = NodeType::Btree(btree);
         Ok(())
     }
+
+    async fn convert_to_direct(&mut self, key: K, input: &Vec<(K, V)>,
+            root_node_size: usize, last_seq: V, meta_block_size: usize, block_loader: L) -> Result<()> {
+        let mut v = Vec::with_capacity(root_node_size);
+        v.resize(root_node_size, 0);
+        let direct = DirectMap {
+            root: Rc::new(RefCell::new(BtreeNode::<K, V>::from_slice(&v))),
+            data: v,
+            nodes: RefCell::new(HashMap::new()),
+            last_seq: RefCell::new(last_seq),
+            dirty: RefCell::new(true),
+            meta_block_size: meta_block_size,
+        };
+
+        let mut i = 0;
+        for (key, val) in input {
+            direct.root.borrow_mut().insert(i, key, val);
+            i += 1;
+        }
+
+        self.block_loader = Some(block_loader);
+        self.inner = NodeType::Direct(direct);
+        Ok(())
+    }
 }
 
 impl<'a, K, V, L> BMap<'a, K, V, L>
@@ -117,7 +141,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
         V: From<K> + NodeValue<V>,
-        L: BlockLoader<V>
+        L: BlockLoader<V> + Clone,
 {
     pub fn new(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
         // start from small
@@ -177,9 +201,17 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     async fn do_delete(&mut self, key: K) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                todo!();
+                return direct.delete(key).await;
             },
             NodeType::Btree(btree) => {
+                let mut v = Vec::<(K, V)>::new();
+                if btree.delete_check_and_gather(key, &mut v).await? {
+                    let _ = btree.delete(key).await?;
+                    let _ = self.convert_to_direct(key, &v,
+                        btree.data.len(), btree.last_seq.take(),
+                        btree.meta_block_size, btree.block_loader.clone()).await?;
+                    return Ok(());
+                }
                 return btree.delete(key).await;
             },
         }
