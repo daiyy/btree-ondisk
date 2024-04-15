@@ -159,7 +159,11 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
                 self.root.borrow().get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
+        // update nchild
+        // TODO: need change to REAL direct node format in the future
+        let nchild = self.root.borrow().get_nchild();
         let value = self.root.borrow_mut().set_val(index, &V::invalid_value());
+        self.root.borrow_mut().set_nchild(nchild - 1);
         Ok(())
     }
 
