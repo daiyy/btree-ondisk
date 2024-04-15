@@ -266,6 +266,23 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    async fn do_truncate(&mut self, key: K) -> Result<()> {
+        let mut last_key = self.last_key().await?;
+        if key > last_key {
+            return Ok(());
+        }
+
+        while key <= last_key {
+            let _ = self.do_delete(last_key).await?;
+            last_key = self.last_key().await?;
+        }
+        return Ok(());
+    }
+
+    pub async fn truncate(&mut self, key: K) -> Result<()> {
+        self.do_truncate(key).await
+    }
+
     // read in root node from extenal buffer
     pub fn read(buf: &[u8], meta_block_size: usize, block_loader: L) -> Self {
         let root = BtreeNode::<K, V>::from_slice(buf);
