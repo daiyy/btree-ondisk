@@ -124,10 +124,20 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         };
 
         let mut i = 0;
-        for (key, val) in input {
-            direct.root.borrow_mut().insert(i, key, val);
-            i += 1;
+        for (k, v) in input {
+            // skip the one not in sequential
+            if i == (Into::<u64>::into(*k) as usize) {
+                direct.root.borrow_mut().insert(i, k, v);
+                i += 1;
+            } else {
+                // this is the one we need to skip
+                assert!(key == *k);
+            }
         }
+        // we accept only 2 cases:
+        // 1. input is in sequence
+        // 2. we need skip one that not in sequence
+        assert!(i == input.len() || i == input.len() - 1);
 
         self.block_loader = Some(block_loader);
         self.inner = NodeType::Direct(direct);

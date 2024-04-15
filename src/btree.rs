@@ -669,12 +669,12 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         // gather data to output vec
         if (maxkey == key.into()) && (next_maxkey < root_capacity as u64) {
-            for i in 0..nchild {
+            // because we shrink to root node, we copy only size min than root capacity
+            for i in 0..std::cmp::min(root_capacity, nchild) {
                 let key = r!(node).get_key(i);
                 let val = r!(node).get_val(i);
                 v.push((key, val));
             }
-            assert!(v.len() == nchild);
             return Ok(true);
         }
         return Ok(false);
