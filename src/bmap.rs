@@ -178,10 +178,18 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         V: From<K> + NodeValue<V>,
         L: BlockLoader<V> + Clone,
 {
-    pub fn new(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
-        // start from small
+    // start from a direct node at level 1 with no entries
+    pub fn new(root_node_size: usize, meta_block_size: usize, block_loader: L) -> Self {
+        // allocate temp space to init a root node as direct
+        let mut data = Vec::with_capacity(root_node_size);
+        data.resize(root_node_size, 0);
+        // init direct root node at level 1
+        let mut root = DirectNode::<V>::from_slice(&data);
+        // flags = 0, level = 1, nchild = 0;
+        root.init(0, 1, 0);
+
         Self {
-            inner: NodeType::Direct(DirectMap::<K, V>::new(data)),
+            inner: NodeType::Direct(DirectMap::<K, V>::new(&data)),
             meta_block_size: meta_block_size,
             block_loader: Some(block_loader),
         }

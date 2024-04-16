@@ -147,7 +147,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
 
     #[inline]
     pub fn set_level(&mut self, level: usize) {
-        self.header.level = level as u8
+        self.header.level = level as u8;
     }
 
     #[inline]
@@ -177,7 +177,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
 
     #[inline]
     pub fn set_nchild(&mut self, c: usize) {
-        self.header.nchildren = c as u16
+        self.header.nchildren = c as u16;
     }
 
     #[inline]
@@ -488,6 +488,13 @@ impl<'a, V> DirectNode<'a, V>
             size: len,
             dirty: false,
         }
+    }
+
+    #[inline]
+    pub fn init(&mut self, flags: usize, level: usize, nchild: usize) {
+        self.header.flags = flags as u8;
+        self.header.level = level as u8;
+        self.header.nchildren = nchild as u16;
     }
 
     #[inline]
