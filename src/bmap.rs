@@ -2,12 +2,13 @@ use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use tokio::io::Result;
 use crate::VMap;
 use crate::{NodeValue, BlockLoader};
 use crate::direct::DirectMap;
 use crate::btree::BtreeMap;
-use crate::node::BtreeNode;
+use crate::node::{BtreeNode, DirectNode};
 use crate::btree::BtreeNodeRef;
 
 pub enum NodeType<'a, K, V, L: BlockLoader<V>> {
@@ -35,6 +36,7 @@ impl<'a, K, V, L> fmt::Display for NodeType<'a, K, V, L>
 
 pub struct BMap<'a, K, V, L: BlockLoader<V>> {
     inner: NodeType<'a, K, V, L>,
+    meta_block_size: usize,
     block_loader: Option<L>,
 }
 
@@ -53,14 +55,25 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V> + Into<u64>,
+        K: From<V> + Into<u64> + From<u64>,
         V: From<K> + NodeValue<V>,
         L: BlockLoader<V>
 {
     async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: V, key: K, val: V) -> Result<()> {
+        // collect all valid value from old direct root
+        let mut old_kv = Vec::new();
+        let direct = DirectNode::<V>::from_slice(&data);
+        for i in 0..direct.get_capacity() {
+            let val = direct.get_val(i);
+            if !val.is_invalid() {
+                old_kv.push((From::<u64>::from(i as u64), val));
+            }
+        }
+
         // create new btree map
         let mut v = Vec::with_capacity(data.len());
-        v.extend(&data);
+        // root node to all zero
+        v.resize(data.len(), 0);
         let btree = BtreeMap {
             root: Rc::new(RefCell::new(BtreeNode::<K, V>::from_slice(&v))),
             data: v,
@@ -71,6 +84,23 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             block_loader: self.block_loader.take().unwrap(),
         };
 
+        // all values in old root node plus one for new k,v to be insert
+        if old_kv.len() + 1 <= btree.root.borrow().get_capacity() {
+            // create root node @level 1
+            btree.root.borrow_mut().set_nchild(0);
+            btree.root.borrow_mut().init_root(1, true);
+            let mut index = 0;
+            for (k, v) in old_kv {
+                btree.root.borrow_mut().insert(index, &k, &v);
+                index += 1;
+            }
+            btree.root.borrow_mut().insert(index, &key, &val);
+
+            // modify inner
+            self.inner = NodeType::Btree(btree);
+            return Ok(());
+        }
+
         let first_root_key;
         // create child node @level 1
         {
@@ -79,14 +109,11 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         (*node).borrow_mut().set_flags(0);
         (*node).borrow_mut().set_nchild(0);
         (*node).borrow_mut().set_level(1);
-        let root = btree.root.borrow_mut();
         // save first key
-        first_root_key = root.get_key(0);
+        first_root_key = old_kv[0].0;
         let mut index = 0;
-        for i in 0..root.get_nchild() {
-            let k = root.get_key(i);
-            let v = root.get_val(i);
-            (*node).borrow_mut().insert(i, &k, &v);
+        for (k, v) in old_kv {
+            (*node).borrow_mut().insert(index, &k, &v);
             index += 1;
         }
         (*node).borrow_mut().insert(index, &key, &val);
@@ -98,10 +125,9 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         // create root node @level 2
         {
 
-        let mut root = btree.root.borrow_mut();
-        root.set_nchild(0);
-        root.init_root(2, true);
-        root.insert(0, &first_root_key, &last_seq);
+        btree.root.borrow_mut().set_nchild(0);
+        btree.root.borrow_mut().init_root(2, true);
+        btree.root.borrow_mut().insert(0, &first_root_key, &last_seq);
 
         }
 
@@ -115,19 +141,18 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
         let direct = DirectMap {
-            root: Rc::new(RefCell::new(BtreeNode::<K, V>::from_slice(&v))),
+            root: Rc::new(RefCell::new(DirectNode::<V>::from_slice(&v))),
             data: v,
-            nodes: RefCell::new(HashMap::new()),
             last_seq: RefCell::new(last_seq),
             dirty: RefCell::new(true),
-            meta_block_size: meta_block_size,
+            marker: PhantomData,
         };
 
         let mut i = 0;
         for (k, v) in input {
             // skip the one not in sequential
             if i == (Into::<u64>::into(*k) as usize) {
-                direct.root.borrow_mut().insert(i, k, v);
+                direct.root.borrow_mut().set_val(i, v);
                 i += 1;
             } else {
                 // this is the one we need to skip
@@ -149,21 +174,23 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V> + Into<u64>,
+        K: From<V> + Into<u64> + From<u64>,
         V: From<K> + NodeValue<V>,
         L: BlockLoader<V> + Clone,
 {
     pub fn new(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
         // start from small
         Self {
-            inner: NodeType::Direct(DirectMap::<K, V>::new(data, meta_block_size)),
+            inner: NodeType::Direct(DirectMap::<K, V>::new(data)),
+            meta_block_size: meta_block_size,
             block_loader: Some(block_loader),
         }
     }
 
     pub fn new_direct(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
         Self {
-            inner: NodeType::Direct(DirectMap::<K, V>::new(data, meta_block_size)),
+            inner: NodeType::Direct(DirectMap::<K, V>::new(data)),
+            meta_block_size: meta_block_size,
             block_loader: Some(block_loader),
         }
     }
@@ -171,6 +198,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     pub fn new_btree(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
         Self {
             inner: NodeType::Btree(BtreeMap::<K, V, L>::new(data, meta_block_size, block_loader)),
+            meta_block_size: meta_block_size,
             block_loader: None,
         }
     }
@@ -193,8 +221,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
                     // convert and insert
                     let data = direct.data.clone();
                     let last_seq = direct.last_seq.take();
-                    let meta_block_size = direct.meta_block_size;
-                    return self.convert_and_insert(data, meta_block_size, last_seq, key, val).await;
+                    return self.convert_and_insert(data, self.meta_block_size, last_seq, key, val).await;
                 }
                 return direct.insert(key, val).await;
             },
@@ -256,7 +283,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     pub fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.lookup_dirty();
+                return Vec::new();
             },
             NodeType::Btree(btree) => {
                 return btree.lookup_dirty();
@@ -289,7 +316,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     pub async fn assign(&self, key: K, newval: V, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.assign(key, newval, node).await;
+                return direct.assign(key, newval).await;
             },
             NodeType::Btree(btree) => {
                 return btree.assign(key, newval, node).await;

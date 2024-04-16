@@ -1,26 +1,23 @@
 use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::collections::HashMap;
 use tokio::io::{Error, ErrorKind, Result};
 use crate::VMap;
 use crate::NodeValue;
 use crate::node::*;
 
-type BtreeNodeRef<'a, K, V> = Rc<RefCell<BtreeNode<'a, K, V>>>;
-
 pub struct DirectMap<'a, K, V> {
     pub data: Vec<u8>,
-    pub root: BtreeNodeRef<'a, K, V>,
-    pub nodes: RefCell<HashMap<K, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
+    pub root: Rc<RefCell<DirectNode<'a, V>>>,
     pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
-    pub meta_block_size: usize,
+    pub marker: PhantomData<K>,
 }
 
 impl<'a, K, V> fmt::Display for DirectMap<'a, K, V>
     where
-        K: Copy + fmt::Display + std::cmp::PartialOrd,
         V: Copy + fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -40,13 +37,6 @@ impl<'a, K, V> DirectMap<'a, K, V>
         let old_value = *self.last_seq.borrow();
         *self.last_seq.borrow_mut() += 1;
         old_value
-    }
-
-    #[allow(dead_code)]
-    #[inline]
-    fn get_val(&self) -> V {
-        *self.last_seq.borrow_mut() += 1;
-        *self.last_seq.borrow()
     }
 
     #[inline]
@@ -75,15 +65,10 @@ impl<'a, K, V> DirectMap<'a, K, V>
         self.data.as_slice()
     }
 
-    pub(crate) fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
-        let mut v = Vec::new();
-        if self.is_dirty() {
-            v.push(self.root.clone());
+    pub(crate) async fn assign(&self, key: K, newval: V) -> Result<()> {
+        if self.is_key_exceed(key) {
+            return Err(Error::new(ErrorKind::InvalidData, ""));
         }
-        v
-    }
-
-    pub(crate) async fn assign(&self, key: K, newval: V, _: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
         let index = key.into() as usize;
         let val = self.root.borrow().get_val(index);
         if val.is_invalid() {
@@ -93,16 +78,15 @@ impl<'a, K, V> DirectMap<'a, K, V>
         Ok(())
     }
 
-    pub(crate) fn new(data: &[u8], meta_block_size: usize) -> Self {
+    pub(crate) fn new(data: &[u8]) -> Self {
         let mut v = Vec::with_capacity(data.len());
         v.extend_from_slice(data);
         Self {
-            root: Rc::new(RefCell::new(BtreeNode::<K, V>::from_slice(&v))),
+            root: Rc::new(RefCell::new(DirectNode::<V>::from_slice(&v))),
             data: v,
-            nodes: RefCell::new(HashMap::new()),
             last_seq: RefCell::new(V::invalid_value()),
             dirty: RefCell::new(false),
-            meta_block_size: meta_block_size,
+            marker: PhantomData,
         }
     }
 
@@ -116,7 +100,15 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         V: From<K> + NodeValue<V>
 {
     async fn lookup(&self, key: K, level: usize) -> Result<V> {
-        return Err(Error::new(ErrorKind::NotFound, ""));
+        let index = key.into() as usize;
+        if index > self.root.borrow().get_capacity() - 1 || level != 1 {
+            return Err(Error::new(ErrorKind::NotFound, ""));
+        }
+        let val = self.root.borrow().get_val(index);
+        if val.is_invalid() {
+            return Err(Error::new(ErrorKind::NotFound, ""));
+        }
+        return Ok(val);
     }
 
     async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
@@ -127,7 +119,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         if self.root.borrow().get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        let max = std::cmp::max(maxblocks, self.root.borrow().get_capacity() - 1 - index + 1);
+        let max = std::cmp::min(maxblocks, self.root.borrow().get_capacity() - 1 - index + 1);
         let mut count = 1;
         while count < max {
             if self.root.borrow().get_val(index + count).is_invalid() {
@@ -149,7 +141,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         }
         self.set_dirty();
         let index = key.into() as usize;
-        self.root.borrow_mut().insert(index, &key, &val);
+        self.root.borrow_mut().set_val(index, &val);
         Ok(())
     }
 
@@ -159,25 +151,18 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
                 self.root.borrow().get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        // update nchild
-        // TODO: need change to REAL direct node format in the future
-        let nchild = self.root.borrow().get_nchild();
-        let value = self.root.borrow_mut().set_val(index, &V::invalid_value());
-        self.root.borrow_mut().set_nchild(nchild - 1);
+        let _ = self.root.borrow_mut().set_val(index, &V::invalid_value());
         Ok(())
     }
 
     async fn seek_key(&self, start: K) -> Result<K> {
         let mut key = start;
-        let mut count = 0;
-        let max = self.root.borrow().get_capacity();
-        while count < max {
-            let index = key.into() as usize;
+        let start_idx = start.into() as usize;
+        for index in start_idx..self.root.borrow().get_capacity() {
             if !self.root.borrow().get_val(index).is_invalid() {
-                return Ok(start);
+                return Ok(key);
             }
             key += 1;
-            count += 1;
         }
         Err(Error::new(ErrorKind::NotFound, ""))
     }
@@ -185,15 +170,11 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
     async fn last_key(&self) -> Result<K> {
         let mut key = K::default();
         let mut last_key: Option<K> = None;
-        let mut count = 0;
-        let max = self.root.borrow().get_capacity();
-        while count <= max - 1 {
-            let index = key.into() as usize;
+        for index in 0..self.root.borrow().get_capacity() {
             if !self.root.borrow().get_val(index).is_invalid() {
                 last_key = Some(key);
             }
             key += 1;
-            count += 1;
         }
         if last_key.is_some() {
             Ok::<K, Error>(last_key.unwrap());

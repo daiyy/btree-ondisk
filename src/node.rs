@@ -442,6 +442,81 @@ impl<'a, K, V> fmt::Display for BtreeNode<'a, K, V>
     }
 }
 
+#[derive(Debug)]
+#[repr(C, align(8))]
+pub struct DirectNode<'a, V> {
+    header: &'a mut BtreeNodeHeader,
+    valmap: &'a mut [V],
+    capacity: usize,
+    size: usize,
+    dirty: bool,
+}
+
+impl<'a, V> DirectNode<'a, V>
+    where
+        V: Copy + fmt::Display
+{
+    pub fn from_slice(buf: &[u8]) -> Self {
+        let len = buf.len();
+        let hdr_size = std::mem::size_of::<BtreeNodeHeader>();
+        if len < hdr_size {
+            panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
+        }
+
+        let ptr = buf.as_ptr() as *mut u8;
+        let header = unsafe {
+            ptr.cast::<BtreeNodeHeader>().as_mut().unwrap()
+        };
+
+        let val_size = std::mem::size_of::<V>();
+        let capacity = (len - hdr_size) / val_size;
+        assert!(capacity >= header.nchildren as usize,
+            "nchildren in header is large than it's capacity {} > {}", header.nchildren, capacity);
+
+        let valmap = unsafe {
+            std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut V, capacity)
+        };
+
+        Self {
+            header: header,
+            valmap: valmap,
+            capacity: capacity,
+            size: len,
+            dirty: false,
+        }
+    }
+
+    #[inline]
+    pub fn get_val(&self, index: usize) -> V {
+        self.valmap[index]
+    }
+
+    #[inline]
+    pub fn set_val(&mut self, index: usize, val: &V) {
+        self.valmap[index] = *val;
+    }
+
+    #[inline]
+    pub fn get_capacity(&self) -> usize {
+        self.capacity
+    }
+}
+
+impl<'a, V> fmt::Display for DirectNode<'a, V>
+    where
+        V: Copy + fmt::Display
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "===== dump direct node @{:?} ====\n", self.header as *const BtreeNodeHeader)?;
+        write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}\n",
+            self.header.flags, self.header.level, self.header.nchildren, self.capacity)?;
+        for idx in 0..self.capacity {
+            write!(f, "{:3}   {:20}   {:20}\n", idx, idx, self.get_val(idx))?;
+        }
+        write!(f, "")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
