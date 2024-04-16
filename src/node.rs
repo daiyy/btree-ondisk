@@ -89,7 +89,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
                 return None;
             }
 
-            let mut data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
+            let data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
             // copy data from buf to inner data
             data.copy_from_slice(buf);
             let mut node = Self::from_slice(data);

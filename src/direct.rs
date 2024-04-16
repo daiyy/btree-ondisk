@@ -2,7 +2,6 @@ use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::collections::HashMap;
 use tokio::io::{Error, ErrorKind, Result};
 use crate::VMap;
 use crate::NodeValue;
@@ -32,6 +31,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         K: From<V> + Into<u64>,
         V: From<K> + NodeValue<V>
 {
+    #[allow(dead_code)]
     #[inline]
     fn get_next_seq(&self) -> V {
         let old_value = *self.last_seq.borrow();
@@ -56,6 +56,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         *self.dirty.borrow_mut() = true;
     }
 
+    #[allow(dead_code)]
     #[inline]
     fn clear_dirty(&self) {
         *self.dirty.borrow_mut() = false;
@@ -182,7 +183,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             key += 1;
         }
         if last_key.is_some() {
-            Ok::<K, Error>(last_key.unwrap());
+            return Ok::<K, Error>(last_key.unwrap());
         }
         Err(Error::new(ErrorKind::NotFound, ""))
     }

@@ -8,6 +8,7 @@ mod direct;
 pub mod bmap;
 mod utils;
 
+#[allow(async_fn_in_trait)]
 pub trait VMap<K, V>
     where
         K: Copy + Default + fmt::Display + PartialOrd + Eq + std::hash::Hash,
@@ -28,6 +29,7 @@ pub trait NodeValue<V> {
     fn invalid_value() -> V;
 }
 
+#[allow(async_fn_in_trait)]
 pub trait BlockLoader<V> {
     async fn read(&self, v: &V, buf: &mut [u8]) -> Result<()>;
 }
@@ -46,6 +48,8 @@ impl<V> NodeValue<V> for u64
 
 impl<V> BlockLoader<V> for u64 {
     async fn read(&self, v: &V, buf: &mut [u8]) -> Result<()> {
+        let _ = v;
+        let _ = buf;
         Ok(())
     }
 }

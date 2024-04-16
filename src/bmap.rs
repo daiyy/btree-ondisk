@@ -105,7 +105,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         // create child node @level 1
         {
 
-        let mut node = btree.get_new_node(last_seq).await?;
+        let node = btree.get_new_node(last_seq).await?;
         (*node).borrow_mut().set_flags(0);
         (*node).borrow_mut().set_nchild(0);
         (*node).borrow_mut().set_level(1);
@@ -137,7 +137,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     }
 
     async fn convert_to_direct(&mut self, key: K, input: &Vec<(K, V)>,
-            root_node_size: usize, last_seq: V, meta_block_size: usize, block_loader: L) -> Result<()> {
+            root_node_size: usize, last_seq: V, block_loader: L) -> Result<()> {
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
         let direct = DirectMap {
@@ -256,8 +256,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
                 if btree.delete_check_and_gather(key, &mut v).await? {
                     let _ = btree.delete(key).await?;
                     let _ = self.convert_to_direct(key, &v,
-                        btree.data.len(), btree.last_seq.take(),
-                        btree.meta_block_size, btree.block_loader.clone()).await?;
+                        btree.data.len(), btree.last_seq.take(), btree.block_loader.clone()).await?;
                     return Ok(());
                 }
                 return btree.delete(key).await;
@@ -293,7 +292,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
 
     pub fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
         match &self.inner {
-            NodeType::Direct(direct) => {
+            NodeType::Direct(_) => {
                 return Vec::new();
             },
             NodeType::Btree(btree) => {
@@ -337,7 +336,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
 
     pub async fn mark(&self, key: K, level: usize) -> Result<()> {
         match &self.inner {
-            NodeType::Direct(direct) => {
+            NodeType::Direct(_) => {
                 return Ok(());
             },
             NodeType::Btree(btree) => {
