@@ -358,11 +358,9 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
     async fn prepare_insert<'s>(&'s self, path: &'s BtreePath<'a, K, V>, key: &K) -> Result<BtreeLevel> {
 
-        let mut level = BTREE_NODE_LEVEL_DATA;
-
-        level = BTREE_NODE_LEVEL_MIN;
+        let mut level = BTREE_NODE_LEVEL_MIN;
         // go through all non leap levels
-        for level in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
+        for _ in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
             let node = path.get_nonroot_node(level);
             if (*node).borrow().has_free_slots() {
                 path.set_op(level, BtreeMapOp::Insert);
@@ -403,9 +401,9 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             (*node).borrow_mut().init(0, level, 0);
             path.set_sib_node(level, node);
             path.set_op(level, BtreeMapOp::Split);
-        }
 
-        level += 1;
+            level += 1;
+        }
 
         // root node
         let root = self.get_root_node();
@@ -442,7 +440,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     async fn prepare_delete<'s>(&'s self, path: &'s BtreePath<'a, K, V>) -> Result<BtreeLevel> {
         let mut level = BTREE_NODE_LEVEL_MIN;
         let mut dindex = path.get_index(level);
-        for mut level in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
+        for _ in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
             let node = path.get_nonroot_node(level);
             path.set_old_seq(level, r!(node).get_val(dindex).into());
 
@@ -495,8 +493,8 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
                     return Ok(level);
                 }
             }
+            level += 1;
         }
-        level += 1;
         // child of the root node is deleted
         path.set_op(level, BtreeMapOp::Delete);
 
