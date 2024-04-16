@@ -65,6 +65,11 @@ impl<'a, K, V> DirectMap<'a, K, V>
         self.data.as_slice()
     }
 
+    // test if map is dirty, expose to crate
+    pub(crate) fn dirty(&self) -> bool {
+        self.is_dirty()
+    }
+
     pub(crate) async fn assign(&self, key: K, newval: V) -> Result<()> {
         if self.is_key_exceed(key) {
             return Err(Error::new(ErrorKind::InvalidData, ""));

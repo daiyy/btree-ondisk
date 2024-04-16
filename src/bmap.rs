@@ -214,6 +214,17 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    pub fn dirty(&self) -> bool {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.dirty();
+            },
+            NodeType::Btree(btree) => {
+                return btree.dirty();
+            }
+        }
+    }
+
     pub async fn do_insert(&mut self, key: K, val: V) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {

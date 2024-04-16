@@ -560,6 +560,11 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         Err(Error::new(ErrorKind::NotFound, ""))
     }
 
+    // test if map is dirty, expose to crate
+    pub(crate) fn dirty(&self) -> bool {
+        self.is_dirty()
+    }
+
     pub(crate) fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
         let mut v = Vec::new();
         for (_, n) in self.nodes.borrow().iter() {
