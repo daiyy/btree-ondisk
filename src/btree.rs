@@ -151,9 +151,9 @@ impl<'a, K, V, L> fmt::Display for BtreeMap<'a, K, V, L>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", (*self.root).borrow());
-        for (v, node) in self.nodes.borrow().iter() {
+        for (_, node) in self.nodes.borrow().iter() {
             let n: Rc<RefCell<BtreeNode<'a, K, V>>> = node.clone();
-            write!(f, "{} - {}", v, (*n).borrow());
+            write!(f, "{}", (*n).borrow());
         }
         write!(f, "")
     }

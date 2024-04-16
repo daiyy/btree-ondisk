@@ -432,7 +432,11 @@ impl<'a, K, V> fmt::Display for BtreeNode<'a, K, V>
         V: Copy + fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "===== dump btree node @{:?} ====\n", self.header as *const BtreeNodeHeader)?;
+        if self.is_large() {
+            write!(f, "===== dump btree node @{:?} ROOT ====\n", self.header as *const BtreeNodeHeader)?;
+        } else {
+            write!(f, "===== dump btree node @{:?} id {} ====\n", self.header as *const BtreeNodeHeader, self.id().unwrap())?;
+        }
         write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}\n",
             self.header.flags, self.header.level, self.header.nchildren, self.capacity)?;
         for idx in 0..self.header.nchildren.into() {
