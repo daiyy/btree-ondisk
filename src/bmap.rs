@@ -287,6 +287,10 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    pub async fn lookup(&self, key: K) -> Result<V> {
+        self.lookup_at_level(key, 1).await
+    }
+
     pub async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
         match &self.inner {
             NodeType::Direct(direct) => {
