@@ -56,9 +56,8 @@ impl<'a, K, V> DirectMap<'a, K, V>
         *self.dirty.borrow_mut() = true;
     }
 
-    #[allow(dead_code)]
     #[inline]
-    fn clear_dirty(&self) {
+    pub(crate) fn clear_dirty(&self) {
         *self.dirty.borrow_mut() = false;
     }
 
