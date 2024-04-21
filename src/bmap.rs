@@ -357,6 +357,17 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    pub async fn propagate(&self, key: K, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.propagate(key).await;
+            },
+            NodeType::Btree(btree) => {
+                return btree.propagate(key, node).await;
+            },
+        }
+    }
+
     pub async fn mark(&self, key: K, level: usize) -> Result<()> {
         match &self.inner {
             NodeType::Direct(_) => {

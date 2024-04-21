@@ -611,6 +611,30 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         Ok(())
     }
 
+    pub(crate) async fn propagate(&self, key: K, meta_node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+
+        let (search_key, level) = if let Some(node) = meta_node {
+            // if this is meta node, we use node key as search key to search in parent node
+            let node_key = r!(node).get_key(0);
+            let node_level = r!(node).get_level();
+            (node_key, node_level)
+        } else {
+            (key, BTREE_NODE_LEVEL_DATA)
+        };
+        debug!("propagate - key: {key}, search at parent level: {}, search_key: {search_key}", level + 1);
+
+        let path = BtreePath::new();
+        let _ = self.do_lookup(&path, &search_key, level + 1).await?;
+
+        let mut level = level + 1;
+        while level < self.get_height() - 1 {
+            let node = self.get_node(&path, level);
+            w!(node).mark_dirty();
+            level += 1;
+        }
+        Ok(())
+    }
+
     pub(crate) async fn mark(&self, key: K, level: usize) -> Result<()> {
         let path = BtreePath::new();
         let val = self.do_lookup(&path, &key, level + 1).await?;

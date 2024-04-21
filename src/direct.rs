@@ -83,6 +83,11 @@ impl<'a, K, V> DirectMap<'a, K, V>
         Ok(())
     }
 
+    pub(crate) async fn propagate(&self, _: K) -> Result<()> {
+        // do nothing for direct node
+        Ok(())
+    }
+
     pub(crate) fn new(data: &[u8]) -> Self {
         let mut v = Vec::with_capacity(data.len());
         v.extend_from_slice(data);
