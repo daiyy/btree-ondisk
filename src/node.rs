@@ -562,6 +562,17 @@ impl<'a, V> DirectNode<'a, V>
     }
 }
 
+impl<'a, V> Drop for DirectNode<'a, V> {
+    fn drop(&mut self) {
+        if self.ptr.is_null() {
+            return;
+        }
+        if let Ok(layout) = std::alloc::Layout::from_size_align(self.size, MIN_ALIGNED) {
+            unsafe { std::alloc::dealloc(self.ptr as *mut u8, layout) };
+        }
+    }
+}
+
 impl<'a, V> fmt::Display for DirectNode<'a, V>
     where
         V: Copy + fmt::Display
