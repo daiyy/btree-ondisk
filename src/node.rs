@@ -1,7 +1,7 @@
 use std::ptr;
 use std::fmt;
 use std::marker::PhantomPinned;
-use crate::ondisk::BtreeNodeHeader;
+use crate::ondisk::NodeHeader;
 
 pub const BTREE_NODE_LARGE: u8 = 0x01;
 pub const BTREE_NODE_LEVEL_DATA: usize = 0x00;
@@ -13,7 +13,7 @@ const MIN_ALIGNED: usize = 8;
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub struct BtreeNode<'a, K, V> {
-    header: &'a mut BtreeNodeHeader,
+    header: &'a mut NodeHeader,
     keymap: &'a mut [K],
     valmap: &'a mut [V],
     capacity: usize,    // kv capacity of this btree node
@@ -31,14 +31,14 @@ impl<'a, K, V> BtreeNode<'a, K, V>
 {
     pub fn from_slice(buf: &[u8]) -> Self {
         let len = buf.len();
-        let hdr_size = std::mem::size_of::<BtreeNodeHeader>();
+        let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
         let ptr = buf.as_ptr() as *mut u8;
         let header = unsafe {
-            ptr.cast::<BtreeNodeHeader>().as_mut().unwrap()
+            ptr.cast::<NodeHeader>().as_mut().unwrap()
         };
 
         let key_size = std::mem::size_of::<K>();
@@ -436,12 +436,12 @@ impl<'a, K, V> fmt::Display for BtreeNode<'a, K, V>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_large() {
-            write!(f, "===== dump btree node @{:?} ROOT ====\n", self.header as *const BtreeNodeHeader)?;
+            write!(f, "===== dump btree node @{:?} ROOT ====\n", self.header as *const NodeHeader)?;
         } else {
             if self.id().is_some() {
-                write!(f, "===== dump btree node @{:?} id {} ====\n", self.header as *const BtreeNodeHeader, self.id().unwrap())?;
+                write!(f, "===== dump btree node @{:?} id {} ====\n", self.header as *const NodeHeader, self.id().unwrap())?;
             } else {
-                write!(f, "===== dump btree node @{:?} id None ====\n", self.header as *const BtreeNodeHeader)?;
+                write!(f, "===== dump btree node @{:?} id None ====\n", self.header as *const NodeHeader)?;
             }
         }
         write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}\n",
@@ -456,9 +456,10 @@ impl<'a, K, V> fmt::Display for BtreeNode<'a, K, V>
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub struct DirectNode<'a, V> {
-    header: &'a mut BtreeNodeHeader,
+    header: &'a mut NodeHeader,
     valmap: &'a mut [V],
     capacity: usize,
+    ptr: *const u8,
     size: usize,
     dirty: bool,
     _pin: PhantomPinned,
@@ -470,14 +471,14 @@ impl<'a, V> DirectNode<'a, V>
 {
     pub fn from_slice(buf: &[u8]) -> Self {
         let len = buf.len();
-        let hdr_size = std::mem::size_of::<BtreeNodeHeader>();
+        let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
         let ptr = buf.as_ptr() as *mut u8;
         let header = unsafe {
-            ptr.cast::<BtreeNodeHeader>().as_mut().unwrap()
+            ptr.cast::<NodeHeader>().as_mut().unwrap()
         };
 
         let val_size = std::mem::size_of::<V>();
@@ -493,10 +494,37 @@ impl<'a, V> DirectNode<'a, V>
             header: header,
             valmap: valmap,
             capacity: capacity,
+            ptr: std::ptr::null(),
             size: len,
             dirty: false,
             _pin: PhantomPinned,
         }
+    }
+
+    pub fn new(size: usize) -> Option<Self> {
+        if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
+            let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
+            if ptr.is_null() {
+                return None;
+            }
+
+            let data = unsafe { std::slice::from_raw_parts(ptr, size) };
+            let mut node = Self::from_slice(data);
+            node.ptr = ptr;
+            return Some(node);
+        };
+        None
+    }
+
+    pub fn copy_from_slice(buf: &[u8]) -> Option<Self> {
+        let size = buf.len();
+        if let Some(mut n) = Self::new(size) {
+            // copy data from buf to inner data
+            let data = n.as_mut();
+            data.copy_from_slice(buf);
+            return Some(n);
+        }
+        None
     }
 
     #[inline]
@@ -520,6 +548,18 @@ impl<'a, V> DirectNode<'a, V>
     pub fn get_capacity(&self) -> usize {
         self.capacity
     }
+
+    pub fn as_ref(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(self.ptr as *const u8, self.size)
+        }
+    }
+
+    pub fn as_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            std::slice::from_raw_parts_mut(self.ptr as *mut u8, self.size)
+        }
+    }
 }
 
 impl<'a, V> fmt::Display for DirectNode<'a, V>
@@ -527,7 +567,7 @@ impl<'a, V> fmt::Display for DirectNode<'a, V>
         V: Copy + fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "===== dump direct node @{:?} ====\n", self.header as *const BtreeNodeHeader)?;
+        write!(f, "===== dump direct node @{:?} ====\n", self.header as *const NodeHeader)?;
         write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}\n",
             self.header.flags, self.header.level, self.header.nchildren, self.capacity)?;
         for idx in 0..self.capacity {
