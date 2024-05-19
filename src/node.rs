@@ -1,5 +1,6 @@
 use std::ptr;
 use std::fmt;
+use std::marker::PhantomPinned;
 use crate::ondisk::BtreeNodeHeader;
 
 pub const BTREE_NODE_LARGE: u8 = 0x01;
@@ -20,6 +21,7 @@ pub struct BtreeNode<'a, K, V> {
     size: usize,
     id: Option<V>,
     dirty: bool,
+    _pin: PhantomPinned,
 }
 
 impl<'a, K, V> BtreeNode<'a, K, V>
@@ -62,6 +64,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
             size: len,
             id: None,
             dirty: false,
+            _pin: PhantomPinned,
         }
     }
 
@@ -458,6 +461,7 @@ pub struct DirectNode<'a, V> {
     capacity: usize,
     size: usize,
     dirty: bool,
+    _pin: PhantomPinned,
 }
 
 impl<'a, V> DirectNode<'a, V>
@@ -491,6 +495,7 @@ impl<'a, V> DirectNode<'a, V>
             capacity: capacity,
             size: len,
             dirty: false,
+            _pin: PhantomPinned,
         }
     }
 
