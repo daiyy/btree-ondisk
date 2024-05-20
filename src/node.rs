@@ -606,7 +606,7 @@ impl<'a, V> DirectNode<'a, V>
 
     #[inline]
     pub fn set_val(&self, index: usize, val: &V) {
-         unsafe {
+        unsafe {
             ptr::copy_nonoverlapping(
                 ptr::addr_of!(*val),
                 ptr::addr_of!(self.valmap[index]) as *mut V,
