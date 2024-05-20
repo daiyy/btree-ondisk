@@ -19,7 +19,7 @@ pub enum NodeType<'a, K, V, L: BlockLoader<V>> {
 impl<'a, K, V, L> fmt::Display for NodeType<'a, K, V, L>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display,
+        V: Copy + fmt::Display + NodeValue<V>,
         L: BlockLoader<V>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -43,7 +43,7 @@ pub struct BMap<'a, K, V, L: BlockLoader<V>> {
 impl<'a, K, V, L> fmt::Display for BMap<'a, K, V, L>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display,
+        V: Copy + fmt::Display + NodeValue<V>,
         L: BlockLoader<V>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -75,7 +75,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         // root node to all zero
         v.resize(data.len(), 0);
         let btree = BtreeMap {
-            root: Rc::new(RefCell::new(BtreeNode::<K, V>::from_slice(&v))),
+            root: Rc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
             data: v,
             nodes: RefCell::new(HashMap::new()),
             last_seq: RefCell::new(last_seq),
@@ -85,16 +85,16 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         };
 
         // all values in old root node plus one for new k,v to be insert
-        if old_kv.len() + 1 <= btree.root.borrow().get_capacity() {
+        if old_kv.len() + 1 <= btree.root.get_capacity() {
             // create root node @level 1
-            btree.root.borrow_mut().set_nchild(0);
-            btree.root.borrow_mut().init_root(1, true);
+            btree.root.set_nchild(0);
+            btree.root.init_root(1, true);
             let mut index = 0;
             for (k, v) in old_kv {
-                btree.root.borrow_mut().insert(index, &k, &v);
+                btree.root.insert(index, &k, &v);
                 index += 1;
             }
-            btree.root.borrow_mut().insert(index, &key, &val);
+            btree.root.insert(index, &key, &val);
 
             // modify inner
             self.inner = NodeType::Btree(btree);
@@ -106,18 +106,18 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         {
 
         let node = btree.get_new_node(last_seq).await?;
-        (*node).borrow_mut().set_flags(0);
-        (*node).borrow_mut().set_nchild(0);
-        (*node).borrow_mut().set_level(1);
+        node.set_flags(0);
+        node.set_nchild(0);
+        node.set_level(1);
         // save first key
         first_root_key = old_kv[0].0;
         let mut index = 0;
         for (k, v) in old_kv {
-            (*node).borrow_mut().insert(index, &k, &v);
+            node.insert(index, &k, &v);
             index += 1;
         }
-        (*node).borrow_mut().insert(index, &key, &val);
-        (*node).borrow_mut().mark_dirty();
+        node.insert(index, &key, &val);
+        node.mark_dirty();
         btree.nodes.borrow_mut().insert(last_seq, node);
 
         }
@@ -125,9 +125,9 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         // create root node @level 2
         {
 
-        btree.root.borrow_mut().set_nchild(0);
-        btree.root.borrow_mut().init_root(2, true);
-        btree.root.borrow_mut().insert(0, &first_root_key, &last_seq);
+        btree.root.set_nchild(0);
+        btree.root.init_root(2, true);
+        btree.root.insert(0, &first_root_key, &last_seq);
 
         }
 
@@ -141,7 +141,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
         let direct = DirectMap {
-            root: Rc::new(RefCell::new(DirectNode::<V>::from_slice(&v))),
+            root: Rc::new(Box::new(DirectNode::<V>::from_slice(&v))),
             data: v,
             last_seq: RefCell::new(last_seq),
             dirty: RefCell::new(true),
@@ -152,7 +152,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         for (k, v) in input {
             // skip the one not in sequential
             if i == (Into::<u64>::into(*k) as usize) {
-                direct.root.borrow_mut().set_val(i, v);
+                direct.root.set_val(i, v);
                 i += 1;
             } else {
                 // this is the one we need to skip
@@ -184,7 +184,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         let mut data = Vec::with_capacity(root_node_size);
         data.resize(root_node_size, 0);
         // init direct root node at level 1
-        let mut root = DirectNode::<V>::from_slice(&data);
+        let root = DirectNode::<V>::from_slice(&data);
         // flags = 0, level = 1, nchild = 0;
         root.init(0, 1, 0);
 
