@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use log::{warn, debug};
 use tokio::io::{Error, ErrorKind, Result};
-use crate::node::*;
+use crate::node_v1::*;
 use crate::VMap;
 use crate::{NodeValue, BlockLoader};
 

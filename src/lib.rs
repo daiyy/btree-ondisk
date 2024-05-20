@@ -4,6 +4,12 @@ use tokio::io::Result;
 pub mod ondisk;
 pub mod node;
 pub mod btree;
+#[allow(dead_code)]
+pub mod node_v1;
+#[allow(dead_code)]
+pub mod btree_v1;
+#[allow(dead_code)]
+pub mod direct_v1;
 mod direct;
 pub mod bmap;
 mod utils;
