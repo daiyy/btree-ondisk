@@ -9,7 +9,7 @@ use crate::node::*;
 
 pub struct DirectMap<'a, K, V> {
     pub data: Vec<u8>,
-    pub root: Rc<Box<DirectNode<'a, V>>>,
+    pub root: Rc<RefCell<DirectNode<'a, V>>>,
     pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
     pub marker: PhantomData<K>,
@@ -20,7 +20,7 @@ impl<'a, K, V> fmt::Display for DirectMap<'a, K, V>
         V: Copy + fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.root)
+        write!(f, "{}", (*self.root).borrow())
     }
 }
 
@@ -43,7 +43,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
     pub(crate) fn is_key_exceed(&self, key: K) -> bool {
         let index = key.into() as usize;
         // if key's index is exceeded
-        index >= self.root.get_capacity()
+        index >= self.root.borrow().get_capacity()
     }
 
     #[inline]
@@ -75,11 +75,11 @@ impl<'a, K, V> DirectMap<'a, K, V>
             return Err(Error::new(ErrorKind::InvalidData, ""));
         }
         let index = key.into() as usize;
-        let val = self.root.get_val(index);
+        let val = self.root.borrow().get_val(index);
         if val.is_invalid() {
             return Err(Error::new(ErrorKind::InvalidData, ""));
         }
-        self.root.set_val(index, &newval);
+        self.root.borrow_mut().set_val(index, &newval);
         Ok(())
     }
 
@@ -92,7 +92,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         let mut v = Vec::with_capacity(data.len());
         v.extend_from_slice(data);
         Self {
-            root: Rc::new(Box::new(DirectNode::<V>::from_slice(&v))),
+            root: Rc::new(RefCell::new(DirectNode::<V>::from_slice(&v))),
             data: v,
             last_seq: RefCell::new(V::invalid_value()),
             dirty: RefCell::new(false),
@@ -111,10 +111,10 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
 {
     async fn lookup(&self, key: K, level: usize) -> Result<V> {
         let index = key.into() as usize;
-        if index > self.root.get_capacity() - 1 || level != 1 {
+        if index > self.root.borrow().get_capacity() - 1 || level != 1 {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        let val = self.root.get_val(index);
+        let val = self.root.borrow().get_val(index);
         if val.is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
@@ -123,53 +123,53 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
 
     async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
         let index = key.into() as usize;
-        if index > self.root.get_capacity() - 1 {
+        if index > self.root.borrow().get_capacity() - 1 {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        if self.root.get_val(index).is_invalid() {
+        if self.root.borrow().get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        let max = std::cmp::min(maxblocks, self.root.get_capacity() - 1 - index + 1);
+        let max = std::cmp::min(maxblocks, self.root.borrow().get_capacity() - 1 - index + 1);
         let mut count = 1;
         while count < max {
-            if self.root.get_val(index + count).is_invalid() {
+            if self.root.borrow().get_val(index + count).is_invalid() {
                 break;
             }
             count += 1;
         }
-        let val = self.root.get_val(index + count);
+        let val = self.root.borrow().get_val(index + count);
         return Ok((val, count));
     }
 
     async fn insert(&self, key: K, val: V) -> Result<()> {
         let index = key.into() as usize;
-        if index > self.root.get_capacity() - 1 {
+        if index > self.root.borrow().get_capacity() - 1 {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        if !self.root.get_val(index).is_invalid() {
+        if !self.root.borrow().get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::AlreadyExists, ""));
         }
         self.set_dirty();
         let index = key.into() as usize;
-        self.root.set_val(index, &val);
+        self.root.borrow_mut().set_val(index, &val);
         Ok(())
     }
 
     async fn delete(&self, key: K) -> Result<()> {
         let index = key.into() as usize;
-        if index > self.root.get_capacity() ||
-                self.root.get_val(index).is_invalid() {
+        if index > self.root.borrow().get_capacity() ||
+                self.root.borrow().get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        let _ = self.root.set_val(index, &V::invalid_value());
+        let _ = self.root.borrow_mut().set_val(index, &V::invalid_value());
         Ok(())
     }
 
     async fn seek_key(&self, start: K) -> Result<K> {
         let mut key = start;
         let start_idx = start.into() as usize;
-        for index in start_idx..self.root.get_capacity() {
-            if !self.root.get_val(index).is_invalid() {
+        for index in start_idx..self.root.borrow().get_capacity() {
+            if !self.root.borrow().get_val(index).is_invalid() {
                 return Ok(key);
             }
             key += 1;
@@ -180,8 +180,8 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
     async fn last_key(&self) -> Result<K> {
         let mut key = K::default();
         let mut last_key: Option<K> = None;
-        for index in 0..self.root.get_capacity() {
-            if !self.root.get_val(index).is_invalid() {
+        for index in 0..self.root.borrow().get_capacity() {
+            if !self.root.borrow().get_val(index).is_invalid() {
                 last_key = Some(key);
             }
             key += 1;

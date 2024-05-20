@@ -2,7 +2,6 @@ use std::ptr;
 use std::fmt;
 use std::marker::PhantomPinned;
 use crate::ondisk::NodeHeader;
-use crate::NodeValue;
 
 pub const BTREE_NODE_LARGE: u8 = 0x01;
 pub const BTREE_NODE_LEVEL_DATA: usize = 0x00;
@@ -11,12 +10,6 @@ pub const BTREE_NODE_LEVEL_MAX: usize = 14;
 
 const MIN_ALIGNED: usize = 8;
 
-/// btree node descriptor for memory pointer, normally a page
-///
-/// SAFETY:
-///   node operations in immutable by unsafe code,
-///   this works because all ops for same node are expected to be ran in a single thread
-///
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub struct BtreeNode<'a, K, V> {
@@ -26,7 +19,7 @@ pub struct BtreeNode<'a, K, V> {
     capacity: usize,    // kv capacity of this btree node
     ptr: *const u8,
     size: usize,
-    id: V,
+    id: Option<V>,
     dirty: bool,
     _pin: PhantomPinned,
 }
@@ -34,7 +27,7 @@ pub struct BtreeNode<'a, K, V> {
 impl<'a, K, V> BtreeNode<'a, K, V>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display + NodeValue<V>,
+        V: Copy + fmt::Display
 {
     pub fn from_slice(buf: &[u8]) -> Self {
         let len = buf.len();
@@ -69,13 +62,13 @@ impl<'a, K, V> BtreeNode<'a, K, V>
             capacity: capacity,
             ptr: std::ptr::null(),
             size: len,
-            id: V::invalid_value(),
+            id: None,
             dirty: false,
             _pin: PhantomPinned,
         }
     }
 
-    pub fn new(size: usize) -> Option<Self> {
+    pub fn new(v: V, size: usize) -> Option<Self> {
         if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
             let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
             if ptr.is_null() {
@@ -85,17 +78,9 @@ impl<'a, K, V> BtreeNode<'a, K, V>
             let data = unsafe { std::slice::from_raw_parts(ptr, size) };
             let mut node = Self::from_slice(data);
             node.ptr = ptr;
-            node.id = V::invalid_value();
+            node.id = Some(v);
             return Some(node);
         };
-        None
-    }
-
-    pub fn new_with_id(size: usize, v: V) -> Option<Self> {
-        if let Some(node) = Self::new(size) {
-            node.set_id(v);
-            return Some(node);
-        }
         None
     }
 
@@ -112,7 +97,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
             data.copy_from_slice(buf);
             let mut node = Self::from_slice(data);
             node.ptr = ptr;
-            node.id = v;
+            node.id = Some(v);
             return Some(node);
         };
         None
@@ -124,7 +109,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         }
     }
 
-    pub fn as_mut(&self) -> &mut [u8] {
+    pub fn as_mut(&mut self) -> &mut [u8] {
         unsafe {
             std::slice::from_raw_parts_mut(self.ptr as *mut u8, self.size)
         }
@@ -139,19 +124,13 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn set_large(&self) {
-        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
-        unsafe {
-            *ptr |= BTREE_NODE_LARGE;
-        }
+    pub fn set_large(&mut self) {
+        self.header.flags |= BTREE_NODE_LARGE;
     }
 
     #[inline]
-    pub fn clear_large(&self) {
-        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
-        unsafe {
-            *ptr &= !BTREE_NODE_LARGE;
-        }
+    pub fn clear_large(&mut self) {
+        self.header.flags &= !BTREE_NODE_LARGE;
     }
 
     #[inline]
@@ -160,11 +139,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn set_flags(&self, flags: usize) {
-        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
-        unsafe {
-            *ptr = flags as u8;
-        }
+    pub fn set_flags(&mut self, flags: usize) {
+        self.header.flags = flags as u8;
     }
 
     #[inline]
@@ -173,11 +149,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn set_level(&self, level: usize) {
-        let ptr = ptr::addr_of!(self.header.level) as *mut u8;
-        unsafe {
-            *ptr = level as u8;
-        }
+    pub fn set_level(&mut self, level: usize) {
+        self.header.level = level as u8;
     }
 
     #[inline]
@@ -186,14 +159,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn set_key(&self, index: usize, key: &K) {
-         unsafe {
-            ptr::copy_nonoverlapping(
-                ptr::addr_of!(*key),
-                ptr::addr_of!(self.keymap[index]) as *mut K,
-                1
-            )
-        }
+    pub fn set_key(&mut self, index: usize, key: &K) {
+        self.keymap[index] = *key;
     }
 
     #[inline]
@@ -202,14 +169,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn set_val(&self, index: usize, val: &V) {
-         unsafe {
-            ptr::copy_nonoverlapping(
-                ptr::addr_of!(*val),
-                ptr::addr_of!(self.valmap[index]) as *mut V,
-                1
-            )
-        }
+    pub fn set_val(&mut self, index: usize, val: &V) {
+        self.valmap[index] = *val;
     }
 
     #[inline]
@@ -218,11 +179,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn set_nchild(&self, c: usize) {
-        let ptr = ptr::addr_of!(self.header.nchildren) as *mut u16;
-        unsafe {
-            *ptr = c as u16;
-        }
+    pub fn set_nchild(&mut self, c: usize) {
+        self.header.nchildren = c as u16;
     }
 
     #[inline]
@@ -261,29 +219,23 @@ impl<'a, K, V> BtreeNode<'a, K, V>
 
     #[inline]
     pub fn id(&self) -> Option<&V> {
-        if self.id.is_invalid() {
-            return None;
-        }
-        Some(&self.id)
+        self.id.as_ref()
     }
 
     #[inline]
-    pub fn set_id(&self, v: V) {
-        let ptr = ptr::addr_of!(self.id) as *mut V;
-        unsafe {
-            *ptr = v;
-        }
+    pub fn set_id(&mut self, v: V) {
+        self.id = Some(v);
     }
 
     #[inline]
-    pub fn init(&self, flags: usize, level: usize, nchild: usize) {
+    pub fn init(&mut self, flags: usize, level: usize, nchild: usize) {
         self.set_flags(flags);
         self.set_level(level);
         self.set_nchild(nchild);
     }
 
     #[inline]
-    pub fn init_root(&self, level: usize, is_large: bool) {
+    pub fn init_root(&mut self, level: usize, is_large: bool) {
         if is_large {
             self.set_large();
         }
@@ -296,19 +248,13 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn mark_dirty(&self) {
-        let ptr = ptr::addr_of!(self.dirty) as *mut bool;
-        unsafe {
-            *ptr = true;
-        }
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
     }
 
     #[inline]
-    pub fn clear_dirty(&self) {
-        let ptr = ptr::addr_of!(self.dirty) as *mut bool;
-        unsafe {
-            *ptr = false;
-        }
+    pub fn clear_dirty(&mut self) {
+        self.dirty = false;
     }
 
     // move n k,v pairs from head of right append to left
@@ -415,7 +361,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     // insert key val @ index
-    pub fn insert(&self, index: usize, key: &K, val: &V) {
+    pub fn insert(&mut self, index: usize, key: &K, val: &V) {
         let mut nchild = self.get_nchild();
 
         if index < nchild {
@@ -423,8 +369,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
                 let ksrc: *const K = &self.keymap[index] as *const K;
                 let vsrc: *const V = &self.valmap[index] as *const V;
 
-                let kdst: *mut K = ptr::addr_of!(self.keymap[index + 1]) as *mut K;
-                let vdst: *mut V = ptr::addr_of!(self.valmap[index + 1]) as *mut V;
+                let kdst: *mut K = &mut self.keymap[index + 1] as *mut K;
+                let vdst: *mut V = &mut self.valmap[index + 1] as *mut V;
 
                 let count = nchild - index;
 
@@ -440,7 +386,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     // delete key val @ index
-    pub fn delete(&self, index: usize, key: &mut K, val: &mut V) {
+    pub fn delete(&mut self, index: usize, key: &mut K, val: &mut V) {
         let mut nchild = self.get_nchild();
 
         *key = self.get_key(index);
@@ -451,8 +397,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
                 let ksrc: *const K = &self.keymap[index + 1] as *const K;
                 let vsrc: *const V = &self.valmap[index + 1] as *const V;
 
-                let kdst: *mut K = ptr::addr_of!(self.keymap[index]) as *mut K;
-                let vdst: *mut V = ptr::addr_of!(self.valmap[index]) as *mut V;
+                let kdst: *mut K = &mut self.keymap[index] as *mut K;
+                let vdst: *mut V = &mut self.valmap[index] as *mut V;
 
                 let count = nchild - index - 1;
 
@@ -486,16 +432,16 @@ impl<'a, K, V> PartialEq for BtreeNode<'a, K, V> {
 impl<'a, K, V> fmt::Display for BtreeNode<'a, K, V>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display + NodeValue<V>,
+        V: Copy + fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_large() {
             write!(f, "===== dump btree node @{:?} ROOT ====\n", self.header as *const NodeHeader)?;
         } else {
-            if let Some(id) = self.id() {
-                write!(f, "===== dump btree node @{:?} id {} ====\n", self.header as *const NodeHeader, id)?;
+            if self.id().is_some() {
+                write!(f, "===== dump btree node @{:?} id {} ====\n", self.header as *const NodeHeader, self.id().unwrap())?;
             } else {
-                write!(f, "===== dump btree node @{:?} id INVALID ====\n", self.header as *const NodeHeader)?;
+                write!(f, "===== dump btree node @{:?} id None ====\n", self.header as *const NodeHeader)?;
             }
         }
         write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}\n",
@@ -507,12 +453,6 @@ impl<'a, K, V> fmt::Display for BtreeNode<'a, K, V>
     }
 }
 
-/// direct node descriptor for memory pointer, normally a tiny memory buffer
-///
-/// SAFETY:
-///   node operations in immutable by unsafe code,
-///   this works because all ops for same node are expected to be ran in a single thread
-///
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub struct DirectNode<'a, V> {
@@ -578,7 +518,7 @@ impl<'a, V> DirectNode<'a, V>
 
     pub fn copy_from_slice(buf: &[u8]) -> Option<Self> {
         let size = buf.len();
-        if let Some(n) = Self::new(size) {
+        if let Some(mut n) = Self::new(size) {
             // copy data from buf to inner data
             let data = n.as_mut();
             data.copy_from_slice(buf);
@@ -588,15 +528,10 @@ impl<'a, V> DirectNode<'a, V>
     }
 
     #[inline]
-    pub fn init(&self, flags: usize, level: usize, nchild: usize) {
-        unsafe {
-            let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
-            *ptr = flags as u8;
-            let ptr = ptr::addr_of!(self.header.level) as *mut u8;
-            *ptr = level as u8;
-            let ptr = ptr::addr_of!(self.header.nchildren) as *mut u16;
-            *ptr = nchild as u16;
-        }
+    pub fn init(&mut self, flags: usize, level: usize, nchild: usize) {
+        self.header.flags = flags as u8;
+        self.header.level = level as u8;
+        self.header.nchildren = nchild as u16;
     }
 
     #[inline]
@@ -605,14 +540,8 @@ impl<'a, V> DirectNode<'a, V>
     }
 
     #[inline]
-    pub fn set_val(&self, index: usize, val: &V) {
-         unsafe {
-            ptr::copy_nonoverlapping(
-                ptr::addr_of!(*val),
-                ptr::addr_of!(self.valmap[index]) as *mut V,
-                1
-            )
-        }
+    pub fn set_val(&mut self, index: usize, val: &V) {
+        self.valmap[index] = *val;
     }
 
     #[inline]
@@ -626,7 +555,7 @@ impl<'a, V> DirectNode<'a, V>
         }
     }
 
-    pub fn as_mut(&self) -> &mut [u8] {
+    pub fn as_mut(&mut self) -> &mut [u8] {
         unsafe {
             std::slice::from_raw_parts_mut(self.ptr as *mut u8, self.size)
         }
