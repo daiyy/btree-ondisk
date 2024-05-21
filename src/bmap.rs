@@ -160,14 +160,10 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
 
         let mut i = 0;
         for (k, v) in input {
-            // skip the one not in sequential
-            if i == (Into::<u64>::into(*k) as usize) {
-                direct.root.set_val(i, v);
-                i += 1;
-            } else {
-                // this is the one we need to skip
-                assert!(key == *k);
-            }
+            // convert key to u64 then to usize,
+            // use key as index of direct node
+            i = Into::<u64>::into(*k) as usize;
+            direct.root.set_val(i, v);
         }
         // we accept only 2 cases:
         // 1. input is in sequence
