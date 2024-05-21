@@ -6,6 +6,7 @@ use log::{warn, debug};
 use tokio::io::{Error, ErrorKind, Result};
 use crate::node::*;
 use crate::VMap;
+use crate::bmap::BMapStat;
 use crate::{NodeValue, BlockLoader};
 
 pub(crate) type BtreeLevel = usize;
@@ -642,6 +643,25 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             dirty: RefCell::new(false),
             meta_block_size: meta_block_size,
             block_loader: block_loader,
+        }
+    }
+
+    pub(crate) fn get_stat(&self) -> BMapStat {
+        let mut l1 = 0;
+        for (_, n) in self.nodes.borrow().iter() {
+            // count all level 1
+            if n.get_level() == 1 {
+                l1 += 1;
+            }
+        }
+
+        BMapStat {
+            btree: true,
+            level: self.root.get_level(),
+            dirty: *self.dirty.borrow(),
+            meta_block_size: self.meta_block_size,
+            nodes_total: self.nodes.borrow().len() + 1, // plus root node
+            nodes_l1: l1,
         }
     }
 

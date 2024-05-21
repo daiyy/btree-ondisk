@@ -11,6 +11,16 @@ use crate::btree::BtreeMap;
 use crate::node::{BtreeNode, DirectNode};
 use crate::btree::BtreeNodeRef;
 
+#[derive(Default, Debug)]
+pub struct BMapStat {
+    pub btree: bool,
+    pub level: usize,
+    pub dirty: bool,
+    pub meta_block_size: usize,
+    pub nodes_total: usize,
+    pub nodes_l1: usize,
+}
+
 pub enum NodeType<'a, K, V, L: BlockLoader<V>> {
     Direct(DirectMap<'a, K, V>),
     Btree(BtreeMap<'a, K, V, L>),
@@ -408,5 +418,16 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     // write out root node to external buffer
     pub fn write(&self, buf: &mut [u8]) {
         buf.copy_from_slice(self.as_slice())
+    }
+
+    pub fn get_stat(&self) -> BMapStat {
+        match &self.inner {
+            NodeType::Direct(_) => {
+                return BMapStat::default();
+            },
+            NodeType::Btree(btree) => {
+                return btree.get_stat();
+            },
+        }
     }
 }
