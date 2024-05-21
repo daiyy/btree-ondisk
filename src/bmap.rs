@@ -146,7 +146,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         Ok(())
     }
 
-    async fn convert_to_direct(&mut self, key: K, input: &Vec<(K, V)>,
+    async fn convert_to_direct(&mut self, _key: K, input: &Vec<(K, V)>,
             root_node_size: usize, last_seq: V, block_loader: L) -> Result<()> {
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
@@ -158,17 +158,12 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             marker: PhantomData,
         };
 
-        let mut i = 0;
         for (k, v) in input {
             // convert key to u64 then to usize,
             // use key as index of direct node
-            i = Into::<u64>::into(*k) as usize;
+            let i = Into::<u64>::into(*k) as usize;
             direct.root.set_val(i, v);
         }
-        // we accept only 2 cases:
-        // 1. input is in sequence
-        // 2. we need skip one that not in sequence
-        assert!(i == input.len() || i == input.len() - 1);
 
         self.block_loader = Some(block_loader);
         self.inner = NodeType::Direct(direct);
@@ -280,6 +275,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
                 let mut v = Vec::<(K, V)>::new();
                 if btree.delete_check_and_gather(key, &mut v).await? {
                     let _ = btree.delete(key).await?;
+                    // re-visit vec we got, remove above last key we need to delete
+                    v.retain(|(_k, _)| _k != &key);
                     let _ = self.convert_to_direct(key, &v,
                         btree.data.len(), btree.last_seq.take(), btree.block_loader.clone()).await?;
                     return Ok(());
