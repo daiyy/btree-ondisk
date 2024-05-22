@@ -181,6 +181,10 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
 {
     // start from a direct node at level 1 with no entries
     pub fn new(root_node_size: usize, meta_block_size: usize, block_loader: L) -> Self {
+        if root_node_size > (meta_block_size / 2) {
+            panic!("root node size {} is too large, reduce to {} at least, which is half of meta block size",
+                root_node_size, meta_block_size / 2);
+        }
         // allocate temp space to init a root node as direct
         let mut data = Vec::with_capacity(root_node_size);
         data.resize(root_node_size, 0);
