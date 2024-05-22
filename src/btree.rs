@@ -250,10 +250,8 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     fn remove_from_nodes(&self, node: BtreeNodeRef<K, V>) -> Result<()> {
-        if let Some(id) = node.id() {
-            let n = self.nodes.borrow_mut().remove(id);
-            assert!(n.is_some());
-        }
+        let n = self.nodes.borrow_mut().remove(node.id());
+        assert!(n.is_some());
         Ok(())
     }
 

@@ -260,11 +260,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn id(&self) -> Option<&V> {
-        if self.id.is_invalid() {
-            return None;
-        }
-        Some(&self.id)
+    pub fn id(&self) -> &V {
+        &self.id
     }
 
     #[inline]
@@ -492,11 +489,7 @@ impl<'a, K, V> fmt::Display for BtreeNode<'a, K, V>
         if self.is_large() {
             write!(f, "===== dump btree node @{:?} ROOT ====\n", self.header as *const NodeHeader)?;
         } else {
-            if let Some(id) = self.id() {
-                write!(f, "===== dump btree node @{:?} id {} ====\n", self.header as *const NodeHeader, id)?;
-            } else {
-                write!(f, "===== dump btree node @{:?} id INVALID ====\n", self.header as *const NodeHeader)?;
-            }
+            write!(f, "===== dump btree node @{:?} id {} ====\n", self.header as *const NodeHeader, self.id())?;
         }
         write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}\n",
             self.header.flags, self.header.level, self.header.nchildren, self.capacity)?;
