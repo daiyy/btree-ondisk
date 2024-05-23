@@ -126,7 +126,8 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         if index > self.root.get_capacity() - 1 {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        if self.root.get_val(index).is_invalid() {
+        let val = self.root.get_val(index);
+        if val.is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
         let max = std::cmp::min(maxblocks, self.root.get_capacity() - 1 - index + 1);
@@ -137,7 +138,6 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             }
             count += 1;
         }
-        let val = self.root.get_val(index + count);
         return Ok((val, count));
     }
 
