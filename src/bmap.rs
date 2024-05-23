@@ -259,7 +259,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
-    pub async fn do_insert(&mut self, key: K, val: V) -> Result<()> {
+    async fn do_insert(&mut self, key: K, val: V) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
                 if direct.is_key_exceed(key) {
