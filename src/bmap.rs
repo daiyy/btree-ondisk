@@ -179,6 +179,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         V: From<K> + NodeValue<V>,
         L: BlockLoader<V> + Clone,
 {
+    /// Constructs a map start from empty direct node.
     // start from a direct node at level 1 with no entries
     pub fn new(root_node_size: usize, meta_block_size: usize, block_loader: L) -> Self {
         if root_node_size > (meta_block_size / 2) {
@@ -200,6 +201,9 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Constructs a new direct map from data slice.
+    ///
+    /// Data will be copied into internal buffer.
     pub fn new_direct(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
         Self {
             inner: NodeType::Direct(DirectMap::<K, V>::new(data)),
@@ -208,6 +212,9 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Constructs a new btree map from data slice.
+    ///
+    /// Data will be copied into internal buffer.
     pub fn new_btree(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
         Self {
             inner: NodeType::Btree(BtreeMap::<K, V, L>::new(data, meta_block_size, block_loader)),
@@ -216,6 +223,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Expose root node data buffer as a slice.
     pub fn as_slice(&self) -> &[u8] {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -227,6 +235,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Set map dirty flag.
     pub fn dirty(&self) -> bool {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -238,6 +247,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Clear map dirty flag. (don't affect nodes dirty state)
     pub fn clear_dirty(&mut self) {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -266,6 +276,13 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Insert a key/value pair.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found, if key inserted out of node's capacity. **direct node ONLY**
+    /// * AlreadyExists - key already exists, new value will not be updated into map.
+    /// * OutOfMemory - insufficient memory.
     pub async fn insert(&mut self, key: K, val: V) -> Result<()> {
         self.do_insert(key, val).await
     }
@@ -290,10 +307,24 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Delete a key/value pair from map.
+    ///
+    /// When btree shrink to height 2 or 3, start to check if btree can be converted to direct.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found.
+    /// * OutOfMemory - insufficient memory.
     pub async fn delete(&mut self, key: K) -> Result<()> {
         self.do_delete(key).await
     }
 
+    /// Lookup key at specific level, return it's value.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found.
+    /// * OutOfMemory - insufficient memory.
     pub async fn lookup_at_level(&self, key: K, level: usize) -> Result<V> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -305,10 +336,28 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Lookup key at level 1, return it's value.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found.
+    /// * OutOfMemory - insufficient memory.
     pub async fn lookup(&self, key: K) -> Result<V> {
         self.lookup_at_level(key, 1).await
     }
 
+    /// Lookup max continues key space.
+    ///   - key: start key
+    ///   - maxblocks: max expected continues
+    ///
+    /// # Return
+    ///
+    /// value, max continue count we acctually found
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found.
+    /// * OutOfMemory - insufficient memory.
     pub async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -320,6 +369,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Collect all dirty nodes into a Vec.
     pub fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
         match &self.inner {
             NodeType::Direct(_) => {
@@ -331,6 +381,12 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Seek a valid entry and return it's key starting from start key.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - no valid entry found.
+    /// * OutOfMemory - insufficient memory.
     pub async fn seek_key(&self, start: K) -> Result<K> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -342,6 +398,12 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Get last key.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found.
+    /// * OutOfMemory - insufficient memory.
     pub async fn last_key(&self) -> Result<K> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -353,6 +415,16 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Assign a new value by key.
+    ///
+    /// **data node:** use key to find value entry.
+    ///
+    /// **meta node:** use node to find value entry, key is unused.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found.
+    /// * OutOfMemory - insufficient memory.
     pub async fn assign(&self, key: K, newval: V, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -364,6 +436,16 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Propagate changes of key/node from specific level up to root, marks all nodes dirty in the path.
+    ///
+    /// **data node:** use key to find target.
+    ///
+    /// **meta node:** use node to find target, key is unused.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found.
+    /// * OutOfMemory - insufficient memory.
     pub async fn propagate(&self, key: K, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -375,6 +457,12 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Mark the block specified by key at level as dirty.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found.
+    /// * OutOfMemory - insufficient memory.
     pub async fn mark(&self, key: K, level: usize) -> Result<()> {
         match &self.inner {
             NodeType::Direct(_) => {
@@ -399,11 +487,17 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         return Ok(());
     }
 
+    /// Truncate index to key value (including key value supplied).
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found.
+    /// * OutOfMemory - insufficient memory.
     pub async fn truncate(&mut self, key: K) -> Result<()> {
         self.do_truncate(key).await
     }
 
-    // read in root node from extenal buffer
+    /// Read in root node from extenal buffer.
     pub fn read(buf: &[u8], meta_block_size: usize, block_loader: L) -> Self {
         let root = BtreeNode::<K, V>::from_slice(buf);
         if root.is_large() {
@@ -412,11 +506,14 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         return Self::new_direct(buf, meta_block_size, block_loader);
     }
 
-    // write out root node to external buffer
+    /// Write out root node to external buffer.
     pub fn write(&self, buf: &mut [u8]) {
         buf.copy_from_slice(self.as_slice())
     }
 
+    /// Get statistics from map internal.
+    ///
+    /// For root node in direct, return all zero.
     pub fn get_stat(&self) -> BMapStat {
         match &self.inner {
             NodeType::Direct(_) => {
