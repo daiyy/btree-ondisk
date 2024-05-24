@@ -1,3 +1,10 @@
+//! Key/Value map implementation.
+//!
+//! Starting from a flat map of signle direct node which for small k/v set.
+//!
+//! Converted to btree based map when key exceed direct node's capacity.
+//!
+//! Individual btree node in the map can be load back from backend storage by [`BlockLoader`].
 use std::fmt;
 use tokio::io::Result;
 
