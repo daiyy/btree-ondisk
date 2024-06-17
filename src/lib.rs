@@ -45,6 +45,7 @@ pub trait NodeValue<V> {
 #[allow(async_fn_in_trait)]
 pub trait BlockLoader<V> {
     async fn read(&self, v: &V, buf: &mut [u8]) -> Result<()>;
+    fn from_new_path(&self, new_path: &str) -> Self;
 }
 
 impl<V> NodeValue<V> for u64
@@ -64,5 +65,10 @@ impl<V> BlockLoader<V> for u64 {
         let _ = v;
         let _ = buf;
         Ok(())
+    }
+
+    fn from_new_path(&self, new_path: &str) -> Self {
+        let _ = new_path;
+        self.clone()
     }
 }
