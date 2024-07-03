@@ -13,6 +13,10 @@ impl BlockLoader<u64> for NullBlockLoader {
         println!("null block loader read v: {}, len: {}", v, buf.len());
         Ok(())
     }
+
+    fn from_new_path(&self, _: &str) -> Self {
+        todo!()
+    }
 }
 
 #[tokio::main]
