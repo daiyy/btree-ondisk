@@ -1,23 +1,8 @@
 use std::time::Instant;
-use tokio::io::Result;
 use indicatif::ProgressBar;
 use human_bytes::human_bytes;
 use btree_ondisk::bmap::BMap;
-use btree_ondisk::BlockLoader;
-
-#[derive(Clone)]
-struct NullBlockLoader;
-
-impl BlockLoader<u64> for NullBlockLoader {
-    async fn read(&self, v: &u64, buf: &mut [u8]) -> Result<()> {
-        println!("null block loader read v: {}, len: {}", v, buf.len());
-        Ok(())
-    }
-
-    fn from_new_path(&self, _: &str) -> Self {
-        todo!()
-    }
-}
+use btree_ondisk::NullBlockLoader;
 
 #[tokio::main]
 async fn main() {

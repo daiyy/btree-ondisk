@@ -72,3 +72,18 @@ impl<V> BlockLoader<V> for u64 {
         self.clone()
     }
 }
+
+// null block loader for test purpose
+#[derive(Clone)]
+pub struct NullBlockLoader;
+
+impl BlockLoader<u64> for NullBlockLoader {
+    async fn read(&self, v: &u64, buf: &mut [u8]) -> Result<()> {
+        println!("null block loader read v: {}, len: {}", v, buf.len());
+        Ok(())
+    }
+
+    fn from_new_path(&self, _: &str) -> Self {
+        todo!()
+    }
+}
