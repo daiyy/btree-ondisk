@@ -142,7 +142,9 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     pub fn set_large(&self) {
         let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
         unsafe {
-            *ptr |= BTREE_NODE_LARGE;
+            let mut flags = self.header.flags;
+            flags |= BTREE_NODE_LARGE;
+            ptr::write_volatile(ptr, flags);
         }
     }
 
@@ -150,7 +152,9 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     pub fn clear_large(&self) {
         let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
         unsafe {
-            *ptr &= !BTREE_NODE_LARGE;
+            let mut flags = self.header.flags;
+            flags &= !BTREE_NODE_LARGE;
+            ptr::write_volatile(ptr, flags);
         }
     }
 
@@ -163,7 +167,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     pub fn set_flags(&self, flags: usize) {
         let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
         unsafe {
-            *ptr = flags as u8;
+            ptr::write_volatile(ptr, flags as u8);
         }
     }
 
@@ -176,7 +180,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     pub fn set_level(&self, level: usize) {
         let ptr = ptr::addr_of!(self.header.level) as *mut u8;
         unsafe {
-            *ptr = level as u8;
+            ptr::write_volatile(ptr, level as u8);
         }
     }
 
@@ -221,7 +225,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     pub fn set_nchild(&self, c: usize) {
         let ptr = ptr::addr_of!(self.header.nchildren) as *mut u16;
         unsafe {
-            *ptr = c as u16;
+            ptr::write_volatile(ptr, c as u16);
         }
     }
 
@@ -268,7 +272,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     pub fn set_id(&self, v: V) {
         let ptr = ptr::addr_of!(self.id) as *mut V;
         unsafe {
-            *ptr = v;
+            ptr::write_volatile(ptr, v);
         }
     }
 
@@ -584,11 +588,11 @@ impl<'a, V> DirectNode<'a, V>
     pub fn init(&self, flags: usize, level: usize, nchild: usize) {
         unsafe {
             let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
-            *ptr = flags as u8;
+            ptr::write_volatile(ptr, flags as u8);
             let ptr = ptr::addr_of!(self.header.level) as *mut u8;
-            *ptr = level as u8;
+            ptr::write_volatile(ptr, level as u8);
             let ptr = ptr::addr_of!(self.header.nchildren) as *mut u16;
-            *ptr = nchild as u16;
+            ptr::write_volatile(ptr, nchild as u16);
         }
     }
 
