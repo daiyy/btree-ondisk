@@ -296,7 +296,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     pub fn mark_dirty(&self) {
         let ptr = ptr::addr_of!(self.dirty) as *mut bool;
         unsafe {
-            *ptr = true;
+            ptr::write_volatile(ptr, true);
         }
     }
 
@@ -304,7 +304,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     pub fn clear_dirty(&self) {
         let ptr = ptr::addr_of!(self.dirty) as *mut bool;
         unsafe {
-            *ptr = false;
+            ptr::write_volatile(ptr, false);
         }
     }
 
