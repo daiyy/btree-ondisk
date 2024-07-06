@@ -1,7 +1,7 @@
 use std::fmt;
 use std::collections::HashMap;
 use std::cell::RefCell;
-use std::rc::Rc;
+use std::sync::Arc;
 use log::{warn, debug};
 use tokio::io::{Error, ErrorKind, Result};
 use crate::node::*;
@@ -10,7 +10,7 @@ use crate::bmap::BMapStat;
 use crate::{NodeValue, BlockLoader};
 
 pub(crate) type BtreeLevel = usize;
-pub(crate) type BtreeNodeRef<'a, K, V> = Rc<Box<BtreeNode<'a, K, V>>>;
+pub(crate) type BtreeNodeRef<'a, K, V> = Arc<Box<BtreeNode<'a, K, V>>>;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub enum BtreeMapOp {
@@ -138,7 +138,7 @@ impl<'a, K, V, L> fmt::Display for BtreeMap<'a, K, V, L>
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.root)?;
         for (_, node) in self.nodes.borrow().iter() {
-            let n: Rc<Box<BtreeNode<'a, K, V>>> = node.clone();
+            let n: BtreeNodeRef<'a, K, V> = node.clone();
             write!(f, "{}", n)?;
         }
         write!(f, "")
@@ -230,7 +230,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         if let Some(node) = BtreeNode::<K, V>::new_with_id(self.meta_block_size, val) {
             self.meta_block_loader(&val, node.as_mut()).await?;
-            let n = Rc::new(Box::new(node));
+            let n = Arc::new(Box::new(node));
             list.insert(val, n.clone());
             return Ok(n);
         }
@@ -240,7 +240,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     pub(crate) async fn get_new_node(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
         let mut list = self.nodes.borrow_mut();
         if let Some(node) = BtreeNode::<K, V>::new_with_id(self.meta_block_size, val) {
-            let n = Rc::new(Box::new(node));
+            let n = Arc::new(Box::new(node));
             if let Some(_oldnode) = list.insert(val, n.clone()) {
                 panic!("value {} is already in nodes list", val);
             }
@@ -634,7 +634,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         let mut v = Vec::with_capacity(data.len());
         v.extend_from_slice(data);
         Self {
-            root: Rc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
+            root: Arc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
             data: v,
             nodes: RefCell::new(HashMap::new()),
             last_seq: RefCell::new(V::invalid_value()),

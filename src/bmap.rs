@@ -1,5 +1,5 @@
 use std::fmt;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -85,7 +85,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         // root node to all zero
         v.resize(data.len(), 0);
         let btree = BtreeMap {
-            root: Rc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
+            root: Arc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
             data: v,
             nodes: RefCell::new(HashMap::new()),
             last_seq: RefCell::new(last_seq),
@@ -151,7 +151,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
         let direct = DirectMap {
-            root: Rc::new(Box::new(DirectNode::<V>::from_slice(&v))),
+            root: Arc::new(Box::new(DirectNode::<V>::from_slice(&v))),
             data: v,
             last_seq: RefCell::new(last_seq),
             dirty: RefCell::new(true),

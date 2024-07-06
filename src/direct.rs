@@ -1,5 +1,5 @@
 use std::fmt;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use tokio::io::{Error, ErrorKind, Result};
@@ -9,7 +9,7 @@ use crate::node::*;
 
 pub struct DirectMap<'a, K, V> {
     pub data: Vec<u8>,
-    pub root: Rc<Box<DirectNode<'a, V>>>,
+    pub root: Arc<Box<DirectNode<'a, V>>>,
     pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
     pub marker: PhantomData<K>,
@@ -92,7 +92,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         let mut v = Vec::with_capacity(data.len());
         v.extend_from_slice(data);
         Self {
-            root: Rc::new(Box::new(DirectNode::<V>::from_slice(&v))),
+            root: Arc::new(Box::new(DirectNode::<V>::from_slice(&v))),
             data: v,
             last_seq: RefCell::new(V::invalid_value()),
             dirty: RefCell::new(false),
