@@ -1,4 +1,7 @@
 use std::fmt;
+#[cfg(feature = "rc")]
+use std::rc::Rc;
+#[cfg(feature = "arc")]
 use std::sync::Arc;
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -9,6 +12,9 @@ use crate::node::*;
 
 pub struct DirectMap<'a, K, V> {
     pub data: Vec<u8>,
+    #[cfg(feature = "rc")]
+    pub root: Rc<Box<DirectNode<'a, V>>>,
+    #[cfg(feature = "arc")]
     pub root: Arc<Box<DirectNode<'a, V>>>,
     pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
@@ -92,6 +98,9 @@ impl<'a, K, V> DirectMap<'a, K, V>
         let mut v = Vec::with_capacity(data.len());
         v.extend_from_slice(data);
         Self {
+            #[cfg(feature = "rc")]
+            root: Rc::new(Box::new(DirectNode::<V>::from_slice(&v))),
+            #[cfg(feature = "arc")]
             root: Arc::new(Box::new(DirectNode::<V>::from_slice(&v))),
             data: v,
             last_seq: RefCell::new(V::invalid_value()),

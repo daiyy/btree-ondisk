@@ -1,6 +1,9 @@
 use std::fmt;
 use std::collections::HashMap;
 use std::cell::RefCell;
+#[cfg(feature = "rc")]
+use std::rc::Rc;
+#[cfg(feature = "arc")]
 use std::sync::Arc;
 use log::{warn, debug};
 use tokio::io::{Error, ErrorKind, Result};
@@ -10,6 +13,9 @@ use crate::bmap::BMapStat;
 use crate::{NodeValue, BlockLoader};
 
 pub(crate) type BtreeLevel = usize;
+#[cfg(feature = "rc")]
+pub(crate) type BtreeNodeRef<'a, K, V> = Rc<Box<BtreeNode<'a, K, V>>>;
+#[cfg(feature = "arc")]
 pub(crate) type BtreeNodeRef<'a, K, V> = Arc<Box<BtreeNode<'a, K, V>>>;
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -230,6 +236,9 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         if let Some(node) = BtreeNode::<K, V>::new_with_id(self.meta_block_size, val) {
             self.meta_block_loader(&val, node.as_mut()).await?;
+            #[cfg(feature = "rc")]
+            let n = Rc::new(Box::new(node));
+            #[cfg(feature = "arc")]
             let n = Arc::new(Box::new(node));
             list.insert(val, n.clone());
             return Ok(n);
@@ -240,6 +249,9 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     pub(crate) async fn get_new_node(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
         let mut list = self.nodes.borrow_mut();
         if let Some(node) = BtreeNode::<K, V>::new_with_id(self.meta_block_size, val) {
+            #[cfg(feature = "rc")]
+            let n = Rc::new(Box::new(node));
+            #[cfg(feature = "arc")]
             let n = Arc::new(Box::new(node));
             if let Some(_oldnode) = list.insert(val, n.clone()) {
                 panic!("value {} is already in nodes list", val);
@@ -634,6 +646,9 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         let mut v = Vec::with_capacity(data.len());
         v.extend_from_slice(data);
         Self {
+            #[cfg(feature = "rc")]
+            root: Rc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
+            #[cfg(feature = "arc")]
             root: Arc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
             data: v,
             nodes: RefCell::new(HashMap::new()),

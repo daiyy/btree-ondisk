@@ -1,4 +1,7 @@
 use std::fmt;
+#[cfg(feature = "rc")]
+use std::rc::Rc;
+#[cfg(feature = "arc")]
 use std::sync::Arc;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -85,6 +88,9 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         // root node to all zero
         v.resize(data.len(), 0);
         let btree = BtreeMap {
+            #[cfg(feature = "rc")]
+            root: Rc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
+            #[cfg(feature = "arc")]
             root: Arc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
             data: v,
             nodes: RefCell::new(HashMap::new()),
@@ -151,6 +157,9 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
         let direct = DirectMap {
+            #[cfg(feature = "rc")]
+            root: Rc::new(Box::new(DirectNode::<V>::from_slice(&v))),
+            #[cfg(feature = "arc")]
             root: Arc::new(Box::new(DirectNode::<V>::from_slice(&v))),
             data: v,
             last_seq: RefCell::new(last_seq),
