@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use tokio::io::Result;
+use std::io::Result;
 use crate::VMap;
 use crate::{NodeValue, BlockLoader};
 use crate::direct::DirectMap;

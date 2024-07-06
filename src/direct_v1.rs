@@ -2,7 +2,7 @@ use std::fmt;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::marker::PhantomData;
-use tokio::io::{Error, ErrorKind, Result};
+use std::io::{Error, ErrorKind, Result};
 use crate::VMap;
 use crate::NodeValue;
 use crate::node::*;

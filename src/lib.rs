@@ -6,7 +6,7 @@
 //!
 //! Individual btree node in the map can be load back from backend storage by [`BlockLoader`].
 use std::fmt;
-use tokio::io::Result;
+use std::io::Result;
 
 pub mod ondisk;
 pub mod node;

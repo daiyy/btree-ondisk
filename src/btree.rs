@@ -5,8 +5,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 #[cfg(feature = "arc")]
 use std::sync::Arc;
+use std::io::{Error, ErrorKind, Result};
 use log::{warn, debug};
-use tokio::io::{Error, ErrorKind, Result};
 use crate::node::*;
 use crate::VMap;
 use crate::bmap::BMapStat;
