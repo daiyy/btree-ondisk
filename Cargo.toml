@@ -11,7 +11,20 @@ env_logger = "0.11.3"
 human_bytes = "0.4.3"
 indicatif = "0.17"
 
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+
 [features]
 default = ["rc"]
 rc = []
 arc = []
+
+[[example]]
+name = "mt-rc"
+path = "examples/mt-rc.rs"
+
+
+[[example]]
+name = "mt-arc"
+path = "examples/mt-arc.rs"
+required-features = ["arc"]
