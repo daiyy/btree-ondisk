@@ -23,21 +23,21 @@ async fn main() {
             let _ = file.bmap.insert(i, i).await;
         }
         let avg = start.elapsed() / iter;
-        println!("{} iters of INSERT total time {:>12?}, avg latency {:>12?}", iter, start.elapsed(), avg);
+        println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "INSERT", start.elapsed(), avg);
 
         let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
             let _ = file.bmap.assign(i, i, None).await;
         }
         let avg = start.elapsed() / iter;
-        println!("{} iters of ASSIGN total time {:>12?}, avg latency {:>12?}", iter, start.elapsed(), avg);
+        println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "ASSIGN", start.elapsed(), avg);
 
         let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
             let _ = file.bmap.propagate(i, None).await;
         }
         let avg = start.elapsed() / iter;
-        println!("{} iters of PROPAGATE total time {:>12?}, avg latency {:>12?}", iter, start.elapsed(), avg);
+        println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "PROPAGATE", start.elapsed(), avg);
 
         loop_count -= 1;
         if loop_count == 0 {
