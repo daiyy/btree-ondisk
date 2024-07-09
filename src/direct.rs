@@ -10,14 +10,21 @@ use crate::VMap;
 use crate::NodeValue;
 use crate::node::*;
 
+#[cfg(feature = "rc")]
 pub struct DirectMap<'a, K, V> {
     pub data: Vec<u8>,
-    #[cfg(feature = "rc")]
     pub root: Rc<Box<DirectNode<'a, V>>>,
-    #[cfg(feature = "arc")]
-    pub root: Arc<Box<DirectNode<'a, V>>>,
     pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
+    pub marker: PhantomData<K>,
+}
+
+#[cfg(feature = "arc")]
+pub struct DirectMap<'a, K, V> {
+    pub data: Vec<u8>,
+    pub root: Arc<Box<DirectNode<'a, V>>>,
+    pub last_seq: Arc<RefCell<V>>,
+    pub dirty: Arc<RefCell<bool>>,
     pub marker: PhantomData<K>,
 }
 
@@ -103,8 +110,14 @@ impl<'a, K, V> DirectMap<'a, K, V>
             #[cfg(feature = "arc")]
             root: Arc::new(Box::new(DirectNode::<V>::from_slice(&v))),
             data: v,
+            #[cfg(feature = "rc")]
             last_seq: RefCell::new(V::invalid_value()),
+            #[cfg(feature = "rc")]
             dirty: RefCell::new(false),
+            #[cfg(feature = "arc")]
+            last_seq: Arc::new(RefCell::new(V::invalid_value())),
+            #[cfg(feature = "arc")]
+            dirty: Arc::new(RefCell::new(false)),
             marker: PhantomData,
         }
     }

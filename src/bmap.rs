@@ -93,9 +93,18 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             root: Arc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
             data: v,
+            #[cfg(feature = "rc")]
             nodes: RefCell::new(HashMap::new()),
+            #[cfg(feature = "rc")]
             last_seq: RefCell::new(last_seq),
+            #[cfg(feature = "rc")]
             dirty: RefCell::new(true),
+            #[cfg(feature = "arc")]
+            nodes: Arc::new(RefCell::new(HashMap::new())),
+            #[cfg(feature = "arc")]
+            last_seq: Arc::new(RefCell::new(last_seq)),
+            #[cfg(feature = "arc")]
+            dirty: Arc::new(RefCell::new(true)),
             meta_block_size: meta_block_size,
             block_loader: self.block_loader.take().unwrap(),
         };
@@ -162,8 +171,14 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             root: Arc::new(Box::new(DirectNode::<V>::from_slice(&v))),
             data: v,
+            #[cfg(feature = "rc")]
             last_seq: RefCell::new(last_seq),
+            #[cfg(feature = "rc")]
             dirty: RefCell::new(true),
+            #[cfg(feature = "arc")]
+            last_seq: Arc::new(RefCell::new(last_seq)),
+            #[cfg(feature = "arc")]
+            dirty: Arc::new(RefCell::new(true)),
             marker: PhantomData,
         };
 

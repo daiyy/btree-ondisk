@@ -125,12 +125,24 @@ impl<'a, K, V: Copy + Default + NodeValue<V>> BtreePath<'a, K, V>
     }
 }
 
+#[cfg(feature = "rc")]
 pub struct BtreeMap<'a, K, V, L: BlockLoader<V>> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V>,
     pub nodes: RefCell<HashMap<V, BtreeNodeRef<'a, K, V>>>, // list of btree node in memory
     pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
+    pub meta_block_size: usize,
+    pub block_loader: L,
+}
+
+#[cfg(feature = "arc")]
+pub struct BtreeMap<'a, K, V, L: BlockLoader<V>> {
+    pub data: Vec<u8>,
+    pub root: BtreeNodeRef<'a, K, V>,
+    pub nodes: Arc<RefCell<HashMap<V, BtreeNodeRef<'a, K, V>>>>, // list of btree node in memory
+    pub last_seq: Arc<RefCell<V>>,
+    pub dirty: Arc<RefCell<bool>>,
     pub meta_block_size: usize,
     pub block_loader: L,
 }
@@ -651,9 +663,18 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             root: Arc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
             data: v,
+            #[cfg(feature = "rc")]
             nodes: RefCell::new(HashMap::new()),
+            #[cfg(feature = "rc")]
             last_seq: RefCell::new(V::invalid_value()),
+            #[cfg(feature = "rc")]
             dirty: RefCell::new(false),
+            #[cfg(feature = "arc")]
+            nodes: Arc::new(RefCell::new(HashMap::new())),
+            #[cfg(feature = "arc")]
+            last_seq: Arc::new(RefCell::new(V::invalid_value())),
+            #[cfg(feature = "arc")]
+            dirty: Arc::new(RefCell::new(false)),
             meta_block_size: meta_block_size,
             block_loader: block_loader,
         }
