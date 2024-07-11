@@ -230,7 +230,8 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         self.data.as_slice()
     }
 
-    async fn meta_block_loader(&self, v: &V, buf: &mut [u8]) -> Result<()> {
+    #[inline]
+    async fn meta_block_loader(&self, v: &V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
         self.block_loader.read(v, buf).await
     }
 
@@ -241,9 +242,20 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         }
 
         if let Some(mut node) = BtreeNode::<K, V>::new(val, self.meta_block_size) {
-            self.meta_block_loader(&val, node.as_mut()).await?;
+            let more = self.meta_block_loader(&val, node.as_mut()).await?;
             let n = Rc::new(RefCell::new(node));
             list.insert(val, n.clone());
+
+            // if we have more to load
+            for (val, data) in more.into_iter() {
+                assert!(data.len() == self.meta_block_size);
+                if let Some(node) = BtreeNode::<K, V>::copy_from_slice(val, &data) {
+                    let n = Rc::new(RefCell::new(node));
+                    list.insert(val, n.clone());
+                } else {
+                    return Err(Error::new(ErrorKind::OutOfMemory, ""));
+                }
+            }
             return Ok(n);
         }
         return Err(Error::new(ErrorKind::OutOfMemory, ""));
