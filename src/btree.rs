@@ -256,14 +256,19 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             list.insert(val, n.clone());
 
             // if we have more to load
-            for (val, data) in more.into_iter() {
+            for (v, data) in more.into_iter() {
                 assert!(data.len() == self.meta_block_size);
-                if let Some(node) = BtreeNode::<K, V>::copy_from_slice(val, &data) {
+                if val == v {
+                    // in case we go duplicated meta block
+                    // skip it
+                    continue;
+                }
+                if let Some(node) = BtreeNode::<K, V>::copy_from_slice(v, &data) {
                     #[cfg(feature = "rc")]
                     let n = Rc::new(Box::new(node));
                     #[cfg(feature = "arc")]
                     let n = Arc::new(Box::new(node));
-                    list.insert(val, n.clone());
+                    list.insert(v, n.clone());
                 } else {
                     return Err(Error::new(ErrorKind::OutOfMemory, ""));
                 }
