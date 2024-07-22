@@ -130,7 +130,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         // create child node @level 1
         {
 
-        let node = btree.get_new_node(last_seq).await?;
+        let node = btree.get_new_node(last_seq)?;
         node.set_flags(0);
         node.set_nchild(0);
         node.set_level(1);

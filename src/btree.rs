@@ -278,7 +278,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         return Err(Error::new(ErrorKind::OutOfMemory, ""));
     }
 
-    pub(crate) async fn get_new_node(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
+    pub(crate) fn get_new_node(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
         let mut list = self.nodes.borrow_mut();
         if let Some(node) = BtreeNode::<K, V>::new_with_id(self.meta_block_size, val) {
             #[cfg(feature = "rc")]
@@ -425,7 +425,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             // both left and right sibling has no free slots
             // prepare a new node and split myself
             let seq = self.prepare_seq(path, level);
-            let node = self.get_new_node(seq).await?;
+            let node = self.get_new_node(seq)?;
             node.init(0, level, 0);
             path.set_sib_node(level, node);
             path.set_op(level, BtreeMapOp::Split);
@@ -442,7 +442,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         // grow
         let seq = self.prepare_seq(path, level);
-        let node = self.get_new_node(seq).await?;
+        let node = self.get_new_node(seq)?;
         node.init(0, level, 0);
         path.set_sib_node(level, node);
         path.set_op(level, BtreeMapOp::Grow);
