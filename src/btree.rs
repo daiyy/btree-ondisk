@@ -241,6 +241,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         self.block_loader.read(v, buf).await
     }
 
+    #[inline]
     pub(crate) fn get_from_list(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
         let list = self.nodes.borrow_mut();
         if let Some(node) = list.get(&val) {
