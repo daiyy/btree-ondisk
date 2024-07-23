@@ -13,15 +13,14 @@ pub mod node;
 pub mod btree;
 #[allow(dead_code)]
 pub mod node_v1;
-#[allow(dead_code)]
-pub mod btree_v1;
-#[allow(dead_code)]
-pub mod direct_v1;
+//#[allow(dead_code)]
+//pub mod btree_v1;
+//#[allow(dead_code)]
+//pub mod direct_v1;
 mod direct;
 pub mod bmap;
 mod utils;
 
-#[allow(async_fn_in_trait)]
 pub trait VMap<K, V>
     where
         K: Copy + Default + fmt::Display + PartialOrd + Eq + std::hash::Hash,
@@ -29,12 +28,12 @@ pub trait VMap<K, V>
         K: From<V>,
         V: From<K>
 {
-    async fn lookup(&self, key: K, level: usize) -> Result<V>;
-    async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)>;
-    async fn insert(&self, key: K, val: V) -> Result<()>;
-    async fn delete(&self, key: K) -> Result<()>;
-    async fn seek_key(&self, start: K) -> Result<K>;
-    async fn last_key(&self) -> Result<K>;
+    fn lookup(&self, key: K, level: usize) -> Result<V>;
+    fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)>;
+    fn insert(&self, key: K, val: V) -> Result<()>;
+    fn delete(&self, key: K) -> Result<()>;
+    fn seek_key(&self, start: K) -> Result<K>;
+    fn last_key(&self) -> Result<K>;
 }
 
 pub trait NodeValue<V> {

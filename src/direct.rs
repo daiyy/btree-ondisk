@@ -83,7 +83,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         self.is_dirty()
     }
 
-    pub(crate) async fn assign(&self, key: K, newval: V) -> Result<()> {
+    pub(crate) fn assign(&self, key: K, newval: V) -> Result<()> {
         if self.is_key_exceed(key) {
             return Err(Error::new(ErrorKind::InvalidData, ""));
         }
@@ -96,7 +96,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         Ok(())
     }
 
-    pub(crate) async fn propagate(&self, _: K) -> Result<()> {
+    pub(crate) fn propagate(&self, _: K) -> Result<()> {
         // do nothing for direct node
         Ok(())
     }
@@ -131,7 +131,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         K: From<V> + Into<u64>,
         V: From<K> + NodeValue<V>
 {
-    async fn lookup(&self, key: K, level: usize) -> Result<V> {
+    fn lookup(&self, key: K, level: usize) -> Result<V> {
         let index = key.into() as usize;
         if index > self.root.get_capacity() - 1 || level != 1 {
             return Err(Error::new(ErrorKind::NotFound, ""));
@@ -143,7 +143,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         return Ok(val);
     }
 
-    async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
+    fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
         let index = key.into() as usize;
         if index > self.root.get_capacity() - 1 {
             return Err(Error::new(ErrorKind::NotFound, ""));
@@ -163,7 +163,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         return Ok((val, count));
     }
 
-    async fn insert(&self, key: K, val: V) -> Result<()> {
+    fn insert(&self, key: K, val: V) -> Result<()> {
         let index = key.into() as usize;
         if index > self.root.get_capacity() - 1 {
             return Err(Error::new(ErrorKind::NotFound, ""));
@@ -177,7 +177,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         Ok(())
     }
 
-    async fn delete(&self, key: K) -> Result<()> {
+    fn delete(&self, key: K) -> Result<()> {
         let index = key.into() as usize;
         if index > self.root.get_capacity() ||
                 self.root.get_val(index).is_invalid() {
@@ -187,7 +187,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         Ok(())
     }
 
-    async fn seek_key(&self, start: K) -> Result<K> {
+    fn seek_key(&self, start: K) -> Result<K> {
         let mut key = start;
         let start_idx = start.into() as usize;
         for index in start_idx..self.root.get_capacity() {
@@ -199,7 +199,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         Err(Error::new(ErrorKind::NotFound, ""))
     }
 
-    async fn last_key(&self) -> Result<K> {
+    fn last_key(&self) -> Result<K> {
         let mut key = K::default();
         let mut last_key: Option<K> = None;
         for index in 0..self.root.get_capacity() {

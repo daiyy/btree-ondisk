@@ -10,7 +10,7 @@ async fn main() {
 
     file.build().await;
 
-    let last_key = file.bmap.last_key().await.expect("failed to get last key");
+    let last_key = file.bmap.last_key().expect("failed to get last key");
     let mut loop_count = 1;
 
     println!("now last key is {last_key}, run loop count: {loop_count}");
@@ -20,21 +20,21 @@ async fn main() {
     loop {
         let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
-            let _ = file.bmap.insert(i, i).await;
+            let _ = file.bmap.insert(i, i);
         }
         let avg = start.elapsed() / iter;
         println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "INSERT", start.elapsed(), avg);
 
         let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
-            let _ = file.bmap.assign(i, i, None).await;
+            let _ = file.bmap.assign(i, i, None);
         }
         let avg = start.elapsed() / iter;
         println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "ASSIGN", start.elapsed(), avg);
 
         let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
-            let _ = file.bmap.propagate(i, None).await;
+            let _ = file.bmap.propagate(i, None);
         }
         let avg = start.elapsed() / iter;
         println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "PROPAGATE", start.elapsed(), avg);

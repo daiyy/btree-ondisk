@@ -37,7 +37,7 @@ impl<'a> File<'a> {
         bar.enable_steady_tick(std::time::Duration::new(1, 0));
         let now = Instant::now();
         for i in 0..num_blocks as u64 {
-            let _ = self.bmap.insert(i, i).await;
+            let _ = self.bmap.insert(i, i);
             if i % 100000 == 0 {
                 bar.inc(100000);
             }

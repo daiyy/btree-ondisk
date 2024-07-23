@@ -72,7 +72,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         V: From<K> + NodeValue<V>,
         L: BlockLoader<V>
 {
-    async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: V, key: K, val: V) -> Result<()> {
+    fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: V, key: K, val: V) -> Result<()> {
         // collect all valid value from old direct root
         let mut old_kv = Vec::new();
         let direct = DirectNode::<V>::from_slice(&data);
@@ -161,7 +161,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         Ok(())
     }
 
-    async fn convert_to_direct(&mut self, _key: K, input: &Vec<(K, V)>,
+    fn convert_to_direct(&mut self, _key: K, input: &Vec<(K, V)>,
             root_node_size: usize, last_seq: V, block_loader: L) -> Result<()> {
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
@@ -283,19 +283,19 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
-    async fn do_insert(&mut self, key: K, val: V) -> Result<()> {
+    fn do_insert(&mut self, key: K, val: V) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
                 if direct.is_key_exceed(key) {
                     // convert and insert
                     let data = direct.data.clone();
                     let last_seq = direct.last_seq.take();
-                    return self.convert_and_insert(data, self.meta_block_size, last_seq, key, val).await;
+                    return self.convert_and_insert(data, self.meta_block_size, last_seq, key, val);
                 }
-                return direct.insert(key, val).await;
+                return direct.insert(key, val);
             },
             NodeType::Btree(btree) => {
-                return btree.insert(key, val).await;
+                return btree.insert(key, val);
             },
         }
     }
@@ -307,26 +307,26 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found, if key inserted out of node's capacity. **direct node ONLY**
     /// * AlreadyExists - key already exists, new value will not be updated into map.
     /// * OutOfMemory - insufficient memory.
-    pub async fn insert(&mut self, key: K, val: V) -> Result<()> {
-        self.do_insert(key, val).await
+    pub fn insert(&mut self, key: K, val: V) -> Result<()> {
+        self.do_insert(key, val)
     }
 
-    async fn do_delete(&mut self, key: K) -> Result<()> {
+    fn do_delete(&mut self, key: K) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.delete(key).await;
+                return direct.delete(key);
             },
             NodeType::Btree(btree) => {
                 let mut v = Vec::<(K, V)>::new();
-                if btree.delete_check_and_gather(key, &mut v).await? {
-                    let _ = btree.delete(key).await?;
+                if btree.delete_check_and_gather(key, &mut v)? {
+                    let _ = btree.delete(key)?;
                     // re-visit vec we got, remove above last key we need to delete
                     v.retain(|(_k, _)| _k != &key);
                     let _ = self.convert_to_direct(key, &v,
-                        btree.data.len(), btree.last_seq.take(), btree.block_loader.clone()).await?;
+                        btree.data.len(), btree.last_seq.take(), btree.block_loader.clone())?;
                     return Ok(());
                 }
-                return btree.delete(key).await;
+                return btree.delete(key);
             },
         }
     }
@@ -339,8 +339,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
-    pub async fn delete(&mut self, key: K) -> Result<()> {
-        self.do_delete(key).await
+    pub fn delete(&mut self, key: K) -> Result<()> {
+        self.do_delete(key)
     }
 
     /// Lookup key at specific level, return it's value.
@@ -349,13 +349,13 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
-    pub async fn lookup_at_level(&self, key: K, level: usize) -> Result<V> {
+    pub fn lookup_at_level(&self, key: K, level: usize) -> Result<V> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.lookup(key, level).await;
+                return direct.lookup(key, level);
             },
             NodeType::Btree(btree) => {
-                return btree.lookup(key, level).await;
+                return btree.lookup(key, level);
             },
         }
     }
@@ -366,8 +366,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
-    pub async fn lookup(&self, key: K) -> Result<V> {
-        self.lookup_at_level(key, 1).await
+    pub fn lookup(&self, key: K) -> Result<V> {
+        self.lookup_at_level(key, 1)
     }
 
     /// Lookup max continues key space.
@@ -382,13 +382,13 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
-    pub async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
+    pub fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.lookup_contig(key, maxblocks).await;
+                return direct.lookup_contig(key, maxblocks);
             },
             NodeType::Btree(btree) => {
-                return btree.lookup_contig(key, maxblocks).await;
+                return btree.lookup_contig(key, maxblocks);
             },
         }
     }
@@ -411,13 +411,13 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - no valid entry found.
     /// * OutOfMemory - insufficient memory.
-    pub async fn seek_key(&self, start: K) -> Result<K> {
+    pub fn seek_key(&self, start: K) -> Result<K> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.seek_key(start).await;
+                return direct.seek_key(start);
             },
             NodeType::Btree(btree) => {
-                return btree.seek_key(start).await;
+                return btree.seek_key(start);
             },
         }
     }
@@ -428,13 +428,13 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
-    pub async fn last_key(&self) -> Result<K> {
+    pub fn last_key(&self) -> Result<K> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.last_key().await;
+                return direct.last_key();
             },
             NodeType::Btree(btree) => {
-                return btree.last_key().await;
+                return btree.last_key();
             },
         }
     }
@@ -449,13 +449,13 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
-    pub async fn assign(&self, key: K, newval: V, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+    pub fn assign(&self, key: K, newval: V, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.assign(key, newval).await;
+                return direct.assign(key, newval);
             },
             NodeType::Btree(btree) => {
-                return btree.assign(key, newval, node).await;
+                return btree.assign(key, newval, node);
             },
         }
     }
@@ -470,13 +470,13 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
-    pub async fn propagate(&self, key: K, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+    pub fn propagate(&self, key: K, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.propagate(key).await;
+                return direct.propagate(key);
             },
             NodeType::Btree(btree) => {
-                return btree.propagate(key, node).await;
+                return btree.propagate(key, node);
             },
         }
     }
@@ -487,26 +487,26 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
-    pub async fn mark(&self, key: K, level: usize) -> Result<()> {
+    pub fn mark(&self, key: K, level: usize) -> Result<()> {
         match &self.inner {
             NodeType::Direct(_) => {
                 return Ok(());
             },
             NodeType::Btree(btree) => {
-                return btree.mark(key, level).await;
+                return btree.mark(key, level);
             },
         }
     }
 
-    async fn do_truncate(&mut self, key: K) -> Result<()> {
-        let mut last_key = self.last_key().await?;
+    fn do_truncate(&mut self, key: K) -> Result<()> {
+        let mut last_key = self.last_key()?;
         if key > last_key {
             return Ok(());
         }
 
         while key <= last_key {
-            let _ = self.do_delete(last_key).await?;
-            last_key = self.last_key().await?;
+            let _ = self.do_delete(last_key)?;
+            last_key = self.last_key()?;
         }
         return Ok(());
     }
@@ -517,8 +517,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
-    pub async fn truncate(&mut self, key: K) -> Result<()> {
-        self.do_truncate(key).await
+    pub fn truncate(&mut self, key: K) -> Result<()> {
+        self.do_truncate(key)
     }
 
     /// Read in root node from extenal buffer.
