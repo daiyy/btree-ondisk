@@ -241,6 +241,14 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         self.block_loader.read(v, buf).await
     }
 
+    pub(crate) fn get_from_list(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
+        let list = self.nodes.borrow_mut();
+        if let Some(node) = list.get(&val) {
+            return Ok(node.clone());
+        }
+        panic!("failed to get node {} from list", val);
+    }
+
     pub(crate) async fn get_from_nodes(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
         let mut list = self.nodes.borrow_mut();
         if let Some(node) = list.get(&val) {
@@ -402,7 +410,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             // left sibling
             if pindex > 0 {
                 let sib_val = parent.get_val(pindex - 1);
-                let sib_node = self.get_from_nodes(sib_val).await?;
+                let sib_node = self.get_from_list(sib_val)?;
                 if sib_node.has_free_slots() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::CarryLeft);
@@ -413,7 +421,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             // right sibling
             if pindex < parent.get_nchild() - 1 {
                 let sib_val = parent.get_val(pindex + 1);
-                let sib_node = self.get_from_nodes(sib_val).await?;
+                let sib_node = self.get_from_list(sib_val)?;
                 if sib_node.has_free_slots() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::CarryRight);
@@ -483,7 +491,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             // left sibling
             if pindex > 0 {
                 let sib_val = parent.get_val(pindex - 1);
-                let sib_node = self.get_from_nodes(sib_val.into()).await?;
+                let sib_node = self.get_from_list(sib_val.into())?;
                 if sib_node.is_overflowing() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::BorrowLeft);
@@ -495,7 +503,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             } else if pindex < parent.get_nchild() - 1 {
                 // right sibling
                 let sib_val = parent.get_val(pindex + 1);
-                let sib_node = self.get_from_nodes(sib_val.into()).await?;
+                let sib_node = self.get_from_list(sib_val.into())?;
                 if sib_node.is_overflowing() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::BorrowRight);
