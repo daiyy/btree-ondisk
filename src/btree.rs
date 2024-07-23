@@ -392,7 +392,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         Ok(key)
     }
 
-    async fn prepare_insert(&self, path: &BtreePath<'a, K, V>) -> Result<BtreeLevel> {
+    fn prepare_insert(&self, path: &BtreePath<'a, K, V>) -> Result<BtreeLevel> {
 
         let mut level = BTREE_NODE_LEVEL_MIN;
         // go through all non leap levels
@@ -472,7 +472,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         self.set_dirty();
     }
 
-    async fn prepare_delete(&self, path: &BtreePath<'a, K, V>) -> Result<BtreeLevel> {
+    fn prepare_delete(&self, path: &BtreePath<'a, K, V>) -> Result<BtreeLevel> {
         let mut level = BTREE_NODE_LEVEL_MIN;
         let mut dindex = path.get_index(level);
         for _ in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
@@ -1193,7 +1193,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
         }
 
         // key not found
-        let level = self.prepare_insert(&path).await?;
+        let level = self.prepare_insert(&path)?;
         self.commit_insert(&path, key, val, level);
         Ok(())
     }
@@ -1205,7 +1205,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
             Err(e) => { return Err(e); }, // return any errors
         }
 
-        let level = self.prepare_delete(&path).await?;
+        let level = self.prepare_delete(&path)?;
         self.commit_delete(&path, level);
         Ok(())
     }
