@@ -19,6 +19,13 @@ async fn main() {
     let blk_idx_start = last_key + 1;
     loop {
         let start = Instant::now();
+        for i in 0..iter as u64 {
+            let _ = file.bmap.lookup(i).await;
+        }
+        let avg = start.elapsed() / iter;
+        println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "LOOKUP", start.elapsed(), avg);
+
+        let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
             let _ = file.bmap.insert(i, i).await;
         }
