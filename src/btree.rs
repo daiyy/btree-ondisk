@@ -739,13 +739,13 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
                 node = root;
             },
             3 => {
-               let nchild = root.get_nchild();
-               if nchild > 1 {
-                   return Ok(false);
-               }
-                // get back only child node, wee need to check it
-               let val = root.get_val(nchild - 1);
-               node = self.get_from_nodes(val.into()).await?;
+                let nchild = root.get_nchild();
+                if nchild > 1 {
+                    return Ok(false);
+                }
+                 // get back only child node, wee need to check it
+                let val = root.get_val(nchild - 1);
+                node = self.get_from_nodes(val.into()).await?;
             },
             _ => {
                 return Ok(false);
