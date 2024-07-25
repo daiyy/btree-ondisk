@@ -3,6 +3,8 @@ use std::fmt;
 use std::rc::Rc;
 #[cfg(feature = "arc")]
 use std::sync::Arc;
+#[cfg(feature = "arc")]
+use std::sync::atomic::AtomicBool;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -104,7 +106,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             last_seq: Arc::new(RefCell::new(last_seq)),
             #[cfg(feature = "arc")]
-            dirty: Arc::new(RefCell::new(true)),
+            dirty: Arc::new(AtomicBool::new(true)),
             meta_block_size: meta_block_size,
             block_loader: self.block_loader.take().unwrap(),
         };
@@ -178,7 +180,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             last_seq: Arc::new(RefCell::new(last_seq)),
             #[cfg(feature = "arc")]
-            dirty: Arc::new(RefCell::new(true)),
+            dirty: Arc::new(AtomicBool::new(true)),
             marker: PhantomData,
         };
 

@@ -5,6 +5,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 #[cfg(feature = "arc")]
 use std::sync::Arc;
+#[cfg(feature = "arc")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::io::{Error, ErrorKind, Result};
 use log::{warn, debug};
 use crate::node::*;
@@ -142,7 +144,7 @@ pub struct BtreeMap<'a, K, V, L: BlockLoader<V>> {
     pub root: BtreeNodeRef<'a, K, V>,
     pub nodes: Arc<RefCell<HashMap<V, BtreeNodeRef<'a, K, V>>>>, // list of btree node in memory
     pub last_seq: Arc<RefCell<V>>,
-    pub dirty: Arc<RefCell<bool>>,
+    pub dirty: Arc<AtomicBool>,
     pub meta_block_size: usize,
     pub block_loader: L,
 }
@@ -219,17 +221,34 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
     #[inline]
     fn is_dirty(&self) -> bool {
-        self.dirty.borrow().clone()
+        #[cfg(feature = "rc")]
+        return self.dirty.borrow().clone();
+        #[cfg(feature = "arc")]
+        return self.dirty.load(Ordering::SeqCst);
     }
 
+    #[cfg(feature = "rc")]
     #[inline]
     fn set_dirty(&self) {
         *self.dirty.borrow_mut() = true;
     }
 
+    #[cfg(feature = "arc")]
+    #[inline]
+    fn set_dirty(&self) {
+        self.dirty.store(true, Ordering::SeqCst);
+    }
+
+    #[cfg(feature = "rc")]
     #[inline]
     pub(crate) fn clear_dirty(&self) {
         *self.dirty.borrow_mut() = false;
+    }
+
+    #[cfg(feature = "arc")]
+    #[inline]
+    pub(crate) fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::SeqCst);
     }
 
     pub fn as_slice(&self) -> &[u8] {
@@ -703,7 +722,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             last_seq: Arc::new(RefCell::new(V::invalid_value())),
             #[cfg(feature = "arc")]
-            dirty: Arc::new(RefCell::new(false)),
+            dirty: Arc::new(AtomicBool::new(false)),
             meta_block_size: meta_block_size,
             block_loader: block_loader,
         }
@@ -721,7 +740,10 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         BMapStat {
             btree: true,
             level: self.root.get_level(),
+            #[cfg(feature = "rc")]
             dirty: *self.dirty.borrow(),
+            #[cfg(feature = "arc")]
+            dirty: self.dirty.load(Ordering::SeqCst),
             meta_block_size: self.meta_block_size,
             nodes_total: self.nodes.borrow().len() + 1, // plus root node
             nodes_l1: l1,

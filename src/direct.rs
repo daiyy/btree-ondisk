@@ -3,6 +3,8 @@ use std::fmt;
 use std::rc::Rc;
 #[cfg(feature = "arc")]
 use std::sync::Arc;
+#[cfg(feature = "arc")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::io::{Error, ErrorKind, Result};
@@ -24,7 +26,7 @@ pub struct DirectMap<'a, K, V> {
     pub data: Vec<u8>,
     pub root: Arc<Box<DirectNode<'a, V>>>,
     pub last_seq: Arc<RefCell<V>>,
-    pub dirty: Arc<RefCell<bool>>,
+    pub dirty: Arc<AtomicBool>,
     pub marker: PhantomData<K>,
 }
 
@@ -61,17 +63,34 @@ impl<'a, K, V> DirectMap<'a, K, V>
 
     #[inline]
     fn is_dirty(&self) -> bool {
-        self.dirty.borrow().clone()
+        #[cfg(feature = "rc")]
+        return self.dirty.borrow().clone();
+        #[cfg(feature = "arc")]
+        return self.dirty.load(Ordering::SeqCst);
     }
 
+    #[cfg(feature = "rc")]
     #[inline]
     fn set_dirty(&self) {
         *self.dirty.borrow_mut() = true;
     }
 
+    #[cfg(feature = "arc")]
+    #[inline]
+    fn set_dirty(&self) {
+        self.dirty.store(true, Ordering::SeqCst);
+    }
+
+    #[cfg(feature = "rc")]
     #[inline]
     pub(crate) fn clear_dirty(&self) {
         *self.dirty.borrow_mut() = false;
+    }
+
+    #[cfg(feature = "arc")]
+    #[inline]
+    pub(crate) fn clear_dirty(&self) {
+        self.dirty.store(false, Ordering::SeqCst);
     }
 
     pub fn as_slice(&self) -> &[u8] {
@@ -117,7 +136,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
             #[cfg(feature = "arc")]
             last_seq: Arc::new(RefCell::new(V::invalid_value())),
             #[cfg(feature = "arc")]
-            dirty: Arc::new(RefCell::new(false)),
+            dirty: Arc::new(AtomicBool::new(false)),
             marker: PhantomData,
         }
     }
