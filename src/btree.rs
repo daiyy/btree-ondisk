@@ -6,7 +6,7 @@ use std::rc::Rc;
 #[cfg(feature = "arc")]
 use std::sync::Arc;
 #[cfg(feature = "arc")]
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::io::{Error, ErrorKind, Result};
 use log::{warn, debug};
 use crate::node::*;
@@ -143,7 +143,7 @@ pub struct BtreeMap<'a, K, V, L: BlockLoader<V>> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V>,
     pub nodes: Arc<RefCell<HashMap<V, BtreeNodeRef<'a, K, V>>>>, // list of btree node in memory
-    pub last_seq: Arc<RefCell<V>>,
+    pub last_seq: Arc<AtomicU64>,
     pub dirty: Arc<AtomicBool>,
     pub meta_block_size: usize,
     pub block_loader: L,
@@ -170,7 +170,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>,
+        V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
         L: BlockLoader<V>,
 {
     #[inline]
@@ -206,10 +206,18 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         level < self.get_height() - 1
     }
 
+    #[cfg(feature = "rc")]
     #[inline]
     fn get_next_seq(&self) -> V {
         *self.last_seq.borrow_mut() += 1;
         *self.last_seq.borrow()
+    }
+
+    #[cfg(feature = "arc")]
+    #[inline]
+    fn get_next_seq(&self) -> V {
+        let old_value = self.last_seq.fetch_add(1, Ordering::SeqCst);
+        From::<u64>::from(old_value)
     }
 
     #[inline]
@@ -497,7 +505,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         let mut dindex = path.get_index(level);
         for _ in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
             let node = path.get_nonroot_node(level);
-            path.set_old_seq(level, node.get_val(dindex).into());
+            path.set_old_seq(level, node.get_val(dindex));
 
             if node.is_overflowing() {
                 path.set_op(level, BtreeMapOp::Delete);
@@ -511,7 +519,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             // left sibling
             if pindex > 0 {
                 let sib_val = parent.get_val(pindex - 1);
-                let sib_node = self.get_from_list(sib_val.into())?;
+                let sib_node = self.get_from_list(sib_val)?;
                 if sib_node.is_overflowing() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::BorrowLeft);
@@ -523,7 +531,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             } else if pindex < parent.get_nchild() - 1 {
                 // right sibling
                 let sib_val = parent.get_val(pindex + 1);
-                let sib_node = self.get_from_list(sib_val.into())?;
+                let sib_node = self.get_from_list(sib_val)?;
                 if sib_node.is_overflowing() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::BorrowRight);
@@ -541,7 +549,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
                     path.set_op(level, BtreeMapOp::Nop);
                     // shrink root child
                     let root = self.get_root_node();
-                    path.set_old_seq(level, root.get_val(dindex).into());
+                    path.set_old_seq(level, root.get_val(dindex));
                     return Ok(level);
                 } else {
                     path.set_op(level, BtreeMapOp::Delete);
@@ -555,7 +563,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         // shrink root child
         let root = self.get_root_node();
-        path.set_old_seq(level, root.get_val(dindex).into());
+        path.set_old_seq(level, root.get_val(dindex));
         Ok(level)
     }
 
@@ -696,7 +704,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     pub(crate) async fn mark(&self, key: K, level: usize) -> Result<()> {
         let path = BtreePath::new();
         let val = self.do_lookup(&path, &key, level + 1).await?;
-        let node = self.get_from_nodes(val.into()).await?;
+        let node = self.get_from_nodes(val).await?;
         node.mark_dirty();
         self.set_dirty();
         Ok(())
@@ -720,7 +728,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             nodes: Arc::new(RefCell::new(HashMap::new())),
             #[cfg(feature = "arc")]
-            last_seq: Arc::new(RefCell::new(V::invalid_value())),
+            last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(V::invalid_value()))),
             #[cfg(feature = "arc")]
             dirty: Arc::new(AtomicBool::new(false)),
             meta_block_size: meta_block_size,
@@ -767,7 +775,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
                 }
                  // get back only child node, wee need to check it
                 let val = root.get_val(nchild - 1);
-                node = self.get_from_nodes(val.into()).await?;
+                node = self.get_from_nodes(val).await?;
             },
             _ => {
                 return Ok(false);
@@ -803,7 +811,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>,
+        V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
         L: BlockLoader<V>,
 {
     fn op_insert(&self, path: &BtreePath<'_, K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
@@ -850,7 +858,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         self.op_insert(path, level, key, val);
 
         *key = child.get_key(0);
-        *val = path.get_new_seq(level).into();
+        *val = path.get_new_seq(level);
     }
 
     fn op_split(&self, path: &BtreePath<K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
@@ -883,7 +891,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             right.insert(idx, key, val);
 
             *key = right.get_key(0);
-            *val = path.get_new_seq(level).into();
+            *val = path.get_new_seq(level);
 
             let sib_node = path.get_sib_node(level);
             path.set_nonroot_node(level, sib_node);
@@ -892,7 +900,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             self.op_insert(path, level, key, val);
 
             *key = right.get_key(0);
-            *val = path.get_new_seq(level).into();
+            *val = path.get_new_seq(level);
 
             path.set_sib_node_none(level);
         }
@@ -1139,7 +1147,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>,
+        V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
         L: BlockLoader<V>,
 {
     async fn lookup(&self, key: K, level: usize) -> Result<V> {
@@ -1194,7 +1202,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
             path.set_nonroot_node_none(level);
 
             // get sibling node for next looop
-            node = self.get_from_nodes(v.into()).await?;
+            node = self.get_from_nodes(v).await?;
             path.set_nonroot_node(level, node.clone());
             index = 0;
             path.set_index(level, index);

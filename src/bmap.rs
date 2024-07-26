@@ -4,7 +4,7 @@ use std::rc::Rc;
 #[cfg(feature = "arc")]
 use std::sync::Arc;
 #[cfg(feature = "arc")]
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -71,8 +71,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64> + From<u64>,
-        V: From<K> + NodeValue<V>,
-        L: BlockLoader<V>
+        V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
+        L: BlockLoader<V>,
 {
     async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: V, key: K, val: V) -> Result<()> {
         // collect all valid value from old direct root
@@ -104,7 +104,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             nodes: Arc::new(RefCell::new(HashMap::new())),
             #[cfg(feature = "arc")]
-            last_seq: Arc::new(RefCell::new(last_seq)),
+            last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(last_seq))),
             #[cfg(feature = "arc")]
             dirty: Arc::new(AtomicBool::new(true)),
             meta_block_size: meta_block_size,
@@ -178,7 +178,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             #[cfg(feature = "rc")]
             dirty: RefCell::new(true),
             #[cfg(feature = "arc")]
-            last_seq: Arc::new(RefCell::new(last_seq)),
+            last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(last_seq))),
             #[cfg(feature = "arc")]
             dirty: Arc::new(AtomicBool::new(true)),
             marker: PhantomData,
@@ -202,7 +202,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64> + From<u64>,
-        V: From<K> + NodeValue<V>,
+        V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
         L: BlockLoader<V> + Clone,
 {
     /// Constructs a map start from empty direct node.
@@ -291,7 +291,10 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
                 if direct.is_key_exceed(key) {
                     // convert and insert
                     let data = direct.data.clone();
+                    #[cfg(feature = "rc")]
                     let last_seq = direct.last_seq.take();
+                    #[cfg(feature = "arc")]
+                    let last_seq = direct.last_seq.load(Ordering::SeqCst).into();
                     return self.convert_and_insert(data, self.meta_block_size, last_seq, key, val).await;
                 }
                 return direct.insert(key, val).await;
@@ -324,8 +327,12 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
                     let _ = btree.delete(key).await?;
                     // re-visit vec we got, remove above last key we need to delete
                     v.retain(|(_k, _)| _k != &key);
+                    #[cfg(feature = "rc")]
                     let _ = self.convert_to_direct(key, &v,
                         btree.data.len(), btree.last_seq.take(), btree.block_loader.clone()).await?;
+                    #[cfg(feature = "arc")]
+                    let _ = self.convert_to_direct(key, &v,
+                        btree.data.len(), btree.last_seq.load(Ordering::SeqCst).into(), btree.block_loader.clone()).await?;
                     return Ok(());
                 }
                 return btree.delete(key).await;

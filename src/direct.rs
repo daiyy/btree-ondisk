@@ -1,11 +1,12 @@
 use std::fmt;
 #[cfg(feature = "rc")]
 use std::rc::Rc;
+#[cfg(feature = "rc")]
+use std::cell::RefCell;
 #[cfg(feature = "arc")]
 use std::sync::Arc;
 #[cfg(feature = "arc")]
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::marker::PhantomData;
 use std::io::{Error, ErrorKind, Result};
 use crate::VMap;
@@ -25,7 +26,7 @@ pub struct DirectMap<'a, K, V> {
 pub struct DirectMap<'a, K, V> {
     pub data: Vec<u8>,
     pub root: Arc<Box<DirectNode<'a, V>>>,
-    pub last_seq: Arc<RefCell<V>>,
+    pub last_seq: Arc<AtomicU64>,
     pub dirty: Arc<AtomicBool>,
     pub marker: PhantomData<K>,
 }
@@ -44,14 +45,23 @@ impl<'a, K, V> DirectMap<'a, K, V>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>
+        V: From<K> + NodeValue<V> + From<u64> + Into<u64>
 {
+    #[cfg(feature = "rc")]
     #[allow(dead_code)]
     #[inline]
     fn get_next_seq(&self) -> V {
         let old_value = *self.last_seq.borrow();
         *self.last_seq.borrow_mut() += 1;
         old_value
+    }
+
+    #[cfg(feature = "arc")]
+    #[allow(dead_code)]
+    #[inline]
+    fn get_next_seq(&self) -> V {
+        let old_value = self.last_seq.fetch_add(1, Ordering::SeqCst);
+        From::<u64>::from(old_value)
     }
 
     #[inline]
@@ -134,7 +144,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
             #[cfg(feature = "rc")]
             dirty: RefCell::new(false),
             #[cfg(feature = "arc")]
-            last_seq: Arc::new(RefCell::new(V::invalid_value())),
+            last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(V::invalid_value()))),
             #[cfg(feature = "arc")]
             dirty: Arc::new(AtomicBool::new(false)),
             marker: PhantomData,
@@ -148,7 +158,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>
+        V: From<K> + NodeValue<V> + From<u64> + Into<u64>
 {
     async fn lookup(&self, key: K, level: usize) -> Result<V> {
         let index = key.into() as usize;
