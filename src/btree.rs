@@ -1,12 +1,15 @@
 use std::fmt;
 use std::collections::HashMap;
-use std::cell::RefCell;
 #[cfg(feature = "rc")]
 use std::rc::Rc;
+#[cfg(feature = "rc")]
+use std::cell::RefCell;
 #[cfg(feature = "arc")]
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 #[cfg(feature = "arc")]
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+#[cfg(feature = "arc")]
+use atomic_refcell::AtomicRefCell;
 use std::io::{Error, ErrorKind, Result};
 use log::{warn, debug};
 use crate::node::*;
@@ -47,7 +50,10 @@ struct BtreePathLevel<'a, K, V> {
 }
 
 pub struct BtreePath<'a, K, V> {
+    #[cfg(feature = "rc")]
     levels: Vec<RefCell<BtreePathLevel<'a, K, V>>>,
+    #[cfg(feature = "arc")]
+    levels: Vec<AtomicRefCell<BtreePathLevel<'a, K, V>>>,
 }
 
 impl<'a, K, V: Copy + Default + NodeValue<V>> BtreePath<'a, K, V>
@@ -55,7 +61,17 @@ impl<'a, K, V: Copy + Default + NodeValue<V>> BtreePath<'a, K, V>
     pub fn new() -> Self {
         let mut l = Vec::with_capacity(BTREE_NODE_LEVEL_MAX);
         for _ in 0..BTREE_NODE_LEVEL_MAX {
+            #[cfg(feature = "rc")]
             l.push(RefCell::new(BtreePathLevel {
+                node: None,
+                sib_node: None,
+                index: 0,
+                oldseq: V::invalid_value(),
+                newseq: V::invalid_value(),
+                op: BtreeMapOp::Nop,
+            }));
+            #[cfg(feature = "arc")]
+            l.push(AtomicRefCell::new(BtreePathLevel {
                 node: None,
                 sib_node: None,
                 index: 0,
@@ -70,58 +86,72 @@ impl<'a, K, V: Copy + Default + NodeValue<V>> BtreePath<'a, K, V>
         }
     }
 
+    #[inline]
     pub fn get_index(&self, level: usize) -> usize {
         self.levels[level].borrow().index
     }
 
+    #[inline]
     pub fn set_index(&self, level: usize, index: usize) {
         self.levels[level].borrow_mut().index = index;
     }
 
+    #[inline]
     pub fn get_nonroot_node(&self, level: usize) -> BtreeNodeRef<'a, K, V> {
         self.levels[level].borrow().node.as_ref().unwrap().clone()
     }
 
+    #[inline]
     pub fn set_nonroot_node(&self, level: usize, node: BtreeNodeRef<'a, K, V>) {
         self.levels[level].borrow_mut().node = Some(node);
     }
 
+    #[inline]
     pub fn set_nonroot_node_none(&self, level: usize) {
         self.levels[level].borrow_mut().node = None;
     }
 
+    #[inline]
     pub fn get_sib_node(&self, level: usize) -> BtreeNodeRef<'a, K, V> {
         self.levels[level].borrow().sib_node.as_ref().unwrap().clone()
     }
 
+    #[inline]
     pub fn set_sib_node(&self, level: usize, node: BtreeNodeRef<'a, K, V>) {
         self.levels[level].borrow_mut().sib_node = Some(node);
     }
 
+    #[inline]
     pub fn set_sib_node_none(&self, level: usize) {
         self.levels[level].borrow_mut().sib_node = None;
     }
 
+    #[inline]
     pub fn get_new_seq(&self, level: usize) -> V {
         self.levels[level].borrow().newseq
     }
 
+    #[inline]
     pub fn set_new_seq(&self, level: usize, seq: V) {
         self.levels[level].borrow_mut().newseq = seq;
     }
 
+    #[inline]
     pub fn get_old_seq(&self, level: usize) -> V {
         self.levels[level].borrow().oldseq
     }
 
+    #[inline]
     pub fn set_old_seq(&self, level: usize, seq: V) {
         self.levels[level].borrow_mut().oldseq = seq;
     }
 
+    #[inline]
     pub fn get_op(&self, level: usize) -> BtreeMapOp {
         self.levels[level].borrow().op
     }
 
+    #[inline]
     pub fn set_op(&self, level: usize, op: BtreeMapOp) {
         self.levels[level].borrow_mut().op = op;
     }
@@ -142,7 +172,7 @@ pub struct BtreeMap<'a, K, V, L: BlockLoader<V>> {
 pub struct BtreeMap<'a, K, V, L: BlockLoader<V>> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V>,
-    pub nodes: Arc<Mutex<HashMap<V, BtreeNodeRef<'a, K, V>>>>, // list of btree node in memory
+    pub nodes: AtomicRefCell<HashMap<V, BtreeNodeRef<'a, K, V>>>,
     pub last_seq: Arc<AtomicU64>,
     pub dirty: Arc<AtomicBool>,
     pub meta_block_size: usize,
@@ -155,20 +185,9 @@ impl<'a, K, V, L> fmt::Display for BtreeMap<'a, K, V, L>
         V: Copy + fmt::Display + NodeValue<V>,
         L: BlockLoader<V>,
 {
-    #[cfg(feature = "rc")]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.root)?;
         for (_, node) in self.nodes.borrow().iter() {
-            let n: BtreeNodeRef<'a, K, V> = node.clone();
-            write!(f, "{}", n)?;
-        }
-        write!(f, "")
-    }
-
-    #[cfg(feature = "arc")]
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.root)?;
-        for (_, node) in self.nodes.lock().unwrap().iter() {
             let n: BtreeNodeRef<'a, K, V> = node.clone();
             write!(f, "{}", n)?;
         }
@@ -228,7 +247,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     #[inline]
     fn get_next_seq(&self) -> V {
         let old_value = self.last_seq.fetch_add(1, Ordering::SeqCst);
-        From::<u64>::from(old_value)
+        From::<u64>::from(old_value + 1)
     }
 
     #[inline]
@@ -281,10 +300,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
     #[inline]
     pub(crate) fn get_from_list(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
-        #[cfg(feature = "rc")]
         let list = self.nodes.borrow_mut();
-        #[cfg(feature = "arc")]
-        let list = self.nodes.lock().unwrap();
         if let Some(node) = list.get(&val) {
             return Ok(node.clone());
         }
@@ -292,13 +308,11 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     pub(crate) async fn get_from_nodes(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
-        #[cfg(feature = "rc")]
-        let mut list = self.nodes.borrow_mut();
-        #[cfg(feature = "arc")]
-        let mut list = self.nodes.lock().unwrap();
+        let list = self.nodes.borrow();
         if let Some(node) = list.get(&val) {
             return Ok(node.clone());
         }
+        drop(list);
 
         if let Some(node) = BtreeNode::<K, V>::new_with_id(self.meta_block_size, val) {
             let more = self.meta_block_loader(&val, node.as_mut()).await?;
@@ -306,7 +320,9 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             let n = Rc::new(Box::new(node));
             #[cfg(feature = "arc")]
             let n = Arc::new(Box::new(node));
+            let mut list = self.nodes.borrow_mut();
             list.insert(val, n.clone());
+            drop(list);
 
             // if we have more to load
             for (v, data) in more.into_iter() {
@@ -321,7 +337,9 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
                     let n = Rc::new(Box::new(node));
                     #[cfg(feature = "arc")]
                     let n = Arc::new(Box::new(node));
+                    let mut list = self.nodes.borrow_mut();
                     list.insert(v, n.clone());
+                    drop(list);
                 } else {
                     return Err(Error::new(ErrorKind::OutOfMemory, ""));
                 }
@@ -332,10 +350,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     pub(crate) fn get_new_node(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
-        #[cfg(feature = "rc")]
         let mut list = self.nodes.borrow_mut();
-        #[cfg(feature = "arc")]
-        let mut list = self.nodes.lock().unwrap();
         if let Some(node) = BtreeNode::<K, V>::new_with_id(self.meta_block_size, val) {
             #[cfg(feature = "rc")]
             let n = Rc::new(Box::new(node));
@@ -350,10 +365,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     fn remove_from_nodes(&self, node: BtreeNodeRef<K, V>) -> Result<()> {
-        #[cfg(feature = "rc")]
         let n = self.nodes.borrow_mut().remove(node.id());
-        #[cfg(feature = "arc")]
-        let n = self.nodes.lock().unwrap().remove(node.id());
         assert!(n.is_some());
         Ok(())
     }
@@ -653,14 +665,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
     pub(crate) fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
         let mut v = Vec::new();
-        #[cfg(feature = "rc")]
         for (_, n) in self.nodes.borrow().iter() {
-            if n.is_dirty() {
-                v.push(n.clone());
-            }
-        }
-        #[cfg(feature = "arc")]
-        for (_, n) in self.nodes.lock().unwrap().iter() {
             if n.is_dirty() {
                 v.push(n.clone());
             }
@@ -691,10 +696,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             let oldval = parent.get_val(pindex);
             debug!("assign - get back meta node oldval {oldval}");
 
-            #[cfg(feature = "rc")]
             let mut list = self.nodes.borrow_mut();
-            #[cfg(feature = "arc")]
-            let mut list = self.nodes.lock().unwrap();
             // remove node from list via old temp val
             if let Some(node) = list.remove(&oldval) {
                 // update node id
@@ -759,7 +761,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             #[cfg(feature = "rc")]
             dirty: RefCell::new(false),
             #[cfg(feature = "arc")]
-            nodes: Arc::new(Mutex::new(HashMap::new())),
+            nodes: AtomicRefCell::new(HashMap::new()),
             #[cfg(feature = "arc")]
             last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(V::invalid_value()))),
             #[cfg(feature = "arc")]
@@ -771,15 +773,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
     pub(crate) fn get_stat(&self) -> BMapStat {
         let mut l1 = 0;
-        #[cfg(feature = "rc")]
         for (_, n) in self.nodes.borrow().iter() {
-            // count all level 1
-            if n.get_level() == 1 {
-                l1 += 1;
-            }
-        }
-        #[cfg(feature = "arc")]
-        for (_, n) in self.nodes.lock().unwrap().iter() {
             // count all level 1
             if n.get_level() == 1 {
                 l1 += 1;
@@ -794,10 +788,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             dirty: self.dirty.load(Ordering::SeqCst),
             meta_block_size: self.meta_block_size,
-            #[cfg(feature = "rc")]
             nodes_total: self.nodes.borrow().len() + 1, // plus root node
-            #[cfg(feature = "arc")]
-            nodes_total: self.nodes.lock().unwrap().len() + 1, // plus root node
             nodes_l1: l1,
         }
     }

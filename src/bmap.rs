@@ -4,9 +4,11 @@ use std::rc::Rc;
 #[cfg(feature = "rc")]
 use std::cell::RefCell;
 #[cfg(feature = "arc")]
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 #[cfg(feature = "arc")]
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+#[cfg(feature = "arc")]
+use atomic_refcell::AtomicRefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::io::Result;
@@ -103,7 +105,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             #[cfg(feature = "rc")]
             dirty: RefCell::new(true),
             #[cfg(feature = "arc")]
-            nodes: Arc::new(Mutex::new(HashMap::new())),
+            nodes: AtomicRefCell::new(HashMap::new()),
             #[cfg(feature = "arc")]
             last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(last_seq))),
             #[cfg(feature = "arc")]
@@ -146,10 +148,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
         node.insert(index, &key, &val);
         node.mark_dirty();
-        #[cfg(feature = "rc")]
         btree.nodes.borrow_mut().insert(last_seq, node);
-        #[cfg(feature = "arc")]
-        btree.nodes.lock().unwrap().insert(last_seq, node);
 
         }
 
