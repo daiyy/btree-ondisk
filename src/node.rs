@@ -31,6 +31,11 @@ pub struct BtreeNode<'a, K, V> {
     _pin: PhantomPinned,
 }
 
+#[cfg(feature = "arc")]
+unsafe impl<'a, K, V> Send for BtreeNode<'a, K, V> {}
+#[cfg(feature = "arc")]
+unsafe impl<'a, K, V> Sync for BtreeNode<'a, K, V> {}
+
 impl<'a, K, V> BtreeNode<'a, K, V>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
@@ -521,6 +526,11 @@ pub struct DirectNode<'a, V> {
     dirty: bool,
     _pin: PhantomPinned,
 }
+
+#[cfg(feature = "arc")]
+unsafe impl<'a, V> Send for DirectNode<'a, V> {}
+#[cfg(feature = "arc")]
+unsafe impl<'a, V> Sync for DirectNode<'a, V> {}
 
 impl<'a, V> DirectNode<'a, V>
     where
