@@ -19,9 +19,9 @@ use crate::{NodeValue, BlockLoader};
 
 pub(crate) type BtreeLevel = usize;
 #[cfg(feature = "rc")]
-pub(crate) type BtreeNodeRef<'a, K, V> = Rc<Box<BtreeNode<'a, K, V>>>;
+pub type BtreeNodeRef<'a, K, V> = Rc<Box<BtreeNode<'a, K, V>>>;
 #[cfg(feature = "arc")]
-pub(crate) type BtreeNodeRef<'a, K, V> = Arc<Box<BtreeNode<'a, K, V>>>;
+pub type BtreeNodeRef<'a, K, V> = Arc<Box<BtreeNode<'a, K, V>>>;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub enum BtreeMapOp {
