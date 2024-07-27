@@ -24,7 +24,6 @@ arc = []
 name = "mt-rc"
 path = "examples/mt-rc.rs"
 
-
 [[example]]
 name = "mt-arc"
 path = "examples/mt-arc.rs"
