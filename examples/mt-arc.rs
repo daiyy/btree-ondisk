@@ -15,6 +15,9 @@ async fn main() {
     println!("");
     println!("##### start concurrncy with {} tasks #####", MAX_CONCURRENCY);
     multi().await;
+    println!("");
+    println!("##### start concurrncy use atomic inc counter with {} tasks #####", MAX_CONCURRENCY);
+    multi_atomic().await;
 }
 
 async fn single() {
@@ -167,6 +170,136 @@ async fn multi() {
             let begin = blk_idx_start + (x * iter) as u64;
             let end = blk_idx_start + ((x + 1) * iter) as u64;
             for i in begin..end as u64 {
+                let file = clone.lock().await;
+                let _ = file.bmap.propagate(i, None).await;
+            }
+            let avg = start.elapsed() / iter as u32;
+            avg
+        });
+    }
+    let mut total_avg: Duration = Duration::new(0, 0);
+    while let Some(res) = set.join_next().await {
+        let avg = res.unwrap();
+        total_avg += avg;
+    }
+    println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", MAX_ITER, "PROPAGATE", start.elapsed(), total_avg / MAX_CONCURRENCY as u32);
+}
+
+use std::sync::atomic::{AtomicU64, Ordering};
+// use atomic u64 as global key/val counter
+async fn multi_atomic() {
+    let file_size = DEFAULT_FILE_SIZE;
+    let f = Arc::new(Mutex::new(mt::File::new(file_size)));
+
+    let clone = f.clone();
+    let h = tokio::spawn(async move {
+        let mut file = clone.lock().await;
+        file.build().await;
+    });
+    let _ = h.await;
+
+    let file = f.lock().await;
+    let last_key = file.bmap.last_key().await.expect("failed to get last key");
+    println!("now last key is {last_key}");
+    drop(file);
+
+    let iter = MAX_ITER / MAX_CONCURRENCY;
+    let blk_idx_start = last_key + 1;
+
+    let begin_atomic = Arc::new(AtomicU64::new(blk_idx_start));
+    let end = blk_idx_start + iter as u64;
+
+    let mut set = JoinSet::new();
+    let start = Instant::now();
+    for _ in 0..MAX_CONCURRENCY {
+        let clone = f.clone();
+        let begin = begin_atomic.clone();
+        set.spawn(async move {
+            let start = Instant::now();
+            loop {
+                let i = begin.fetch_add(1, Ordering::SeqCst);
+                if i >= end { break; }
+                let file = clone.lock().await;
+                let _ = file.bmap.lookup(i).await;
+            }
+            let avg = start.elapsed() / iter as u32;
+            avg
+        });
+    }
+    let mut total_avg: Duration = Duration::new(0, 0);
+    while let Some(res) = set.join_next().await {
+        let avg = res.unwrap();
+        total_avg += avg;
+    }
+    println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", MAX_ITER, "LOOKUP", start.elapsed(), total_avg / MAX_CONCURRENCY as u32);
+
+    let begin_atomic = Arc::new(AtomicU64::new(blk_idx_start));
+    let end = blk_idx_start + iter as u64;
+
+    let mut set = JoinSet::new();
+    let start = Instant::now();
+    for _x in 0..MAX_CONCURRENCY {
+        let clone = f.clone();
+        let begin = begin_atomic.clone();
+        set.spawn(async move {
+            let start = Instant::now();
+            loop {
+                let i = begin.fetch_add(1, Ordering::SeqCst);
+                if i >= end { break; }
+                let mut file = clone.lock().await;
+                let _ = file.bmap.insert(i, i).await;
+            }
+            let avg = start.elapsed() / iter as u32;
+            avg
+        });
+    }
+    let mut total_avg: Duration = Duration::new(0, 0);
+    while let Some(res) = set.join_next().await {
+        let avg = res.unwrap();
+        total_avg += avg;
+    }
+    println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", MAX_ITER, "INSERT", start.elapsed(), total_avg / MAX_CONCURRENCY as u32);
+
+    let begin_atomic = Arc::new(AtomicU64::new(blk_idx_start));
+    let end = blk_idx_start + iter as u64;
+
+    let mut set = JoinSet::new();
+    let start = Instant::now();
+    for _x in 0..MAX_CONCURRENCY {
+        let clone = f.clone();
+        let begin = begin_atomic.clone();
+        set.spawn(async move {
+            let start = Instant::now();
+            loop {
+                let i = begin.fetch_add(1, Ordering::SeqCst);
+                if i >= end { break; }
+                let file = clone.lock().await;
+                let _ = file.bmap.assign(i, i, None).await;
+            }
+            let avg = start.elapsed() / iter as u32;
+            avg
+        });
+    }
+    let mut total_avg: Duration = Duration::new(0, 0);
+    while let Some(res) = set.join_next().await {
+        let avg = res.unwrap();
+        total_avg += avg;
+    }
+    println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", MAX_ITER, "ASSIGN", start.elapsed(), total_avg / MAX_CONCURRENCY as u32);
+
+    let begin_atomic = Arc::new(AtomicU64::new(blk_idx_start));
+    let end = blk_idx_start + iter as u64;
+
+    let mut set = JoinSet::new();
+    let start = Instant::now();
+    for _x in 0..MAX_CONCURRENCY {
+        let clone = f.clone();
+        let begin = begin_atomic.clone();
+        set.spawn(async move {
+            let start = Instant::now();
+            loop {
+                let i = begin.fetch_add(1, Ordering::SeqCst);
+                if i >= end { break; }
                 let file = clone.lock().await;
                 let _ = file.bmap.propagate(i, None).await;
             }
