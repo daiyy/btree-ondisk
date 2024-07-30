@@ -112,6 +112,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         self.is_dirty()
     }
 
+    #[maybe_async::maybe_async]
     pub(crate) async fn assign(&self, key: K, newval: V) -> Result<()> {
         if self.is_key_exceed(key) {
             return Err(Error::new(ErrorKind::InvalidData, ""));
@@ -125,6 +126,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         Ok(())
     }
 
+    #[maybe_async::maybe_async]
     pub(crate) async fn propagate(&self, _: K) -> Result<()> {
         // do nothing for direct node
         Ok(())
@@ -160,6 +162,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         K: From<V> + Into<u64>,
         V: From<K> + NodeValue<V> + From<u64> + Into<u64>
 {
+    #[maybe_async::maybe_async]
     async fn lookup(&self, key: K, level: usize) -> Result<V> {
         let index = key.into() as usize;
         if index > self.root.get_capacity() - 1 || level != 1 {
@@ -172,6 +175,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         return Ok(val);
     }
 
+    #[maybe_async::maybe_async]
     async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
         let index = key.into() as usize;
         if index > self.root.get_capacity() - 1 {
@@ -192,6 +196,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         return Ok((val, count));
     }
 
+    #[maybe_async::maybe_async]
     async fn insert(&self, key: K, val: V) -> Result<()> {
         let index = key.into() as usize;
         if index > self.root.get_capacity() - 1 {
@@ -206,6 +211,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         Ok(())
     }
 
+    #[maybe_async::maybe_async]
     async fn delete(&self, key: K) -> Result<()> {
         let index = key.into() as usize;
         if index > self.root.get_capacity() ||
@@ -216,6 +222,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         Ok(())
     }
 
+    #[maybe_async::maybe_async]
     async fn seek_key(&self, start: K) -> Result<K> {
         let mut key = start;
         let start_idx = start.into() as usize;
@@ -228,6 +235,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         Err(Error::new(ErrorKind::NotFound, ""))
     }
 
+    #[maybe_async::maybe_async]
     async fn last_key(&self) -> Result<K> {
         let mut key = K::default();
         let mut last_key: Option<K> = None;

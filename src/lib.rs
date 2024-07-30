@@ -12,15 +12,19 @@ pub mod ondisk;
 pub mod node;
 pub mod btree;
 #[allow(dead_code)]
+#[cfg(not(feature = "sync-api"))]
 pub mod node_v1;
 #[allow(dead_code)]
+#[cfg(not(feature = "sync-api"))]
 pub mod btree_v1;
 #[allow(dead_code)]
+#[cfg(not(feature = "sync-api"))]
 pub mod direct_v1;
 mod direct;
 pub mod bmap;
 mod utils;
 
+#[maybe_async::maybe_async(AFIT)]
 #[allow(async_fn_in_trait)]
 pub trait VMap<K, V>
     where

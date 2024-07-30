@@ -77,6 +77,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
         L: BlockLoader<V>,
 {
+    #[maybe_async::maybe_async]
     async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: V, key: K, val: V) -> Result<()> {
         // collect all valid value from old direct root
         let mut old_kv = Vec::new();
@@ -166,6 +167,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         Ok(())
     }
 
+    #[maybe_async::maybe_async]
     async fn convert_to_direct(&mut self, _key: K, input: &Vec<(K, V)>,
             root_node_size: usize, last_seq: V, block_loader: L) -> Result<()> {
         let mut v = Vec::with_capacity(root_node_size);
@@ -288,6 +290,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    #[maybe_async::maybe_async]
     async fn do_insert(&mut self, key: K, val: V) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -315,10 +318,12 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found, if key inserted out of node's capacity. **direct node ONLY**
     /// * AlreadyExists - key already exists, new value will not be updated into map.
     /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
     pub async fn insert(&mut self, key: K, val: V) -> Result<()> {
         self.do_insert(key, val).await
     }
 
+    #[maybe_async::maybe_async]
     async fn do_delete(&mut self, key: K) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -351,6 +356,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
     pub async fn delete(&mut self, key: K) -> Result<()> {
         self.do_delete(key).await
     }
@@ -361,6 +367,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
     pub async fn lookup_at_level(&self, key: K, level: usize) -> Result<V> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -378,6 +385,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
     pub async fn lookup(&self, key: K) -> Result<V> {
         self.lookup_at_level(key, 1).await
     }
@@ -394,6 +402,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
     pub async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -423,6 +432,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - no valid entry found.
     /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
     pub async fn seek_key(&self, start: K) -> Result<K> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -440,6 +450,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
     pub async fn last_key(&self) -> Result<K> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -461,6 +472,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
     pub async fn assign(&self, key: K, newval: V, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -482,6 +494,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
     pub async fn propagate(&self, key: K, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -499,6 +512,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
     pub async fn mark(&self, key: K, level: usize) -> Result<()> {
         match &self.inner {
             NodeType::Direct(_) => {
@@ -510,6 +524,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    #[maybe_async::maybe_async]
     async fn do_truncate(&mut self, key: K) -> Result<()> {
         let mut last_key = self.last_key().await?;
         if key > last_key {
@@ -529,6 +544,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
     pub async fn truncate(&mut self, key: K) -> Result<()> {
         self.do_truncate(key).await
     }

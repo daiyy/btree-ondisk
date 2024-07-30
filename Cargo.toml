@@ -9,6 +9,8 @@ edition = "2021"
 log = "0.4.21"
 env_logger = "0.11.3"
 atomic_refcell = { version = "0.1.13", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+maybe-async = "0.2.10"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -19,6 +21,7 @@ indicatif = "0.17"
 default = ["rc"]
 rc = []
 arc = ["atomic_refcell"]
+sync-api = ["dep:tokio", "maybe-async/is_sync"]
 
 [[example]]
 name = "mt-rc"
