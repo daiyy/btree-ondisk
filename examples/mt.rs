@@ -29,6 +29,7 @@ impl<'a> File<'a> {
         }
     }
 
+    #[maybe_async::maybe_async(AFIT)]
     pub(crate) async fn build(&mut self) {
         println!("Creating metadata for {} file, root node size: {}, meta node size: {}, data block size: {} ...",
             human_bytes(self.file_size as f64), self.root_node_size, self.meta_block_size, self.data_block_size);
