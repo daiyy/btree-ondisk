@@ -298,22 +298,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         self.block_loader.read(v, buf).await
     }
 
-    #[cfg(feature = "sync-api")]
-    #[inline]
-    pub(crate) fn is_node_exist(&self, val: V) -> Option<BtreeNodeRef<'a, K, V>> {
-        let list = self.nodes.borrow_mut();
-        return list.get(&val).map(|n| n.clone());
-    }
-
-    #[inline]
-    pub(crate) fn get_from_list(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
-        let list = self.nodes.borrow_mut();
-        if let Some(node) = list.get(&val) {
-            return Ok(node.clone());
-        }
-        panic!("failed to get node {} from list", val);
-    }
-
+    #[maybe_async::maybe_async]
     pub(crate) async fn get_from_nodes(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
         let list = self.nodes.borrow();
         if let Some(node) = list.get(&val) {
@@ -322,7 +307,14 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         drop(list);
 
         if let Some(node) = BtreeNode::<K, V>::new_with_id(self.meta_block_size, val) {
+            #[cfg(not(feature = "sync-api"))]
             let more = self.meta_block_loader(&val, node.as_mut()).await?;
+            #[cfg(feature = "sync-api")]
+            let more = tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    self.meta_block_loader(&val, node.as_mut()).await
+                })
+            })?;
             #[cfg(feature = "rc")]
             let n = Rc::new(Box::new(node));
             #[cfg(feature = "arc")]
@@ -409,19 +401,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         level -= 1;
         while level >= minlevel {
-            #[cfg(not(feature = "sync-api"))]
             let node = self.get_from_nodes(value).await?;
-            #[cfg(feature = "sync-api")]
-            let node = if let Some(n) = self.is_node_exist(value) {
-                n
-            } else {
-                tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(async {
-                        self.get_from_nodes(value).await
-                    })
-                })?
-            };
-
             if !found {
                 (found, index) = node.lookup(key);
             } else {
@@ -464,23 +444,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         level -= 1;
         while level > 0 {
-            #[cfg(not(feature = "sync-api"))]
-            { // code block
             node = self.get_from_nodes(value).await?;
-            } // end code block
-            #[cfg(feature = "sync-api")]
-            { // code block
-            node = if let Some(n) = self.is_node_exist(value) {
-                n
-            } else {
-                tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(async {
-                        self.get_from_nodes(value).await
-                    })
-                })?
-            };
-            } // end code block
-
             index = node.get_nchild() - 1;
             value = node.get_val(index);
             path.set_nonroot_node(level, node.clone());
@@ -491,7 +455,8 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         Ok(key)
     }
 
-    fn prepare_insert(&self, path: &BtreePath<'a, K, V>) -> Result<BtreeLevel> {
+    #[maybe_async::maybe_async]
+    async fn prepare_insert(&self, path: &BtreePath<'a, K, V>) -> Result<BtreeLevel> {
 
         let mut level = BTREE_NODE_LEVEL_MIN;
         // go through all non leap levels
@@ -509,7 +474,10 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             // left sibling
             if pindex > 0 {
                 let sib_val = parent.get_val(pindex - 1);
-                let sib_node = self.get_from_list(sib_val)?;
+                #[cfg(not(feature = "sync-api"))]
+                let sib_node = self.get_from_nodes(sib_val).await?;
+                #[cfg(feature = "sync-api")]
+                let sib_node = self.get_from_nodes(sib_val)?;
                 if sib_node.has_free_slots() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::CarryLeft);
@@ -520,7 +488,10 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             // right sibling
             if pindex < parent.get_nchild() - 1 {
                 let sib_val = parent.get_val(pindex + 1);
-                let sib_node = self.get_from_list(sib_val)?;
+                #[cfg(not(feature = "sync-api"))]
+                let sib_node = self.get_from_nodes(sib_val).await?;
+                #[cfg(feature = "sync-api")]
+                let sib_node = self.get_from_nodes(sib_val)?;
                 if sib_node.has_free_slots() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::CarryRight);
@@ -571,7 +542,8 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         self.set_dirty();
     }
 
-    fn prepare_delete(&self, path: &BtreePath<'a, K, V>) -> Result<BtreeLevel> {
+    #[maybe_async::maybe_async]
+    async fn prepare_delete(&self, path: &BtreePath<'a, K, V>) -> Result<BtreeLevel> {
         let mut level = BTREE_NODE_LEVEL_MIN;
         let mut dindex = path.get_index(level);
         for _ in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
@@ -590,7 +562,10 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             // left sibling
             if pindex > 0 {
                 let sib_val = parent.get_val(pindex - 1);
-                let sib_node = self.get_from_list(sib_val)?;
+                #[cfg(not(feature = "sync-api"))]
+                let sib_node = self.get_from_nodes(sib_val).await?;
+                #[cfg(feature = "sync-api")]
+                let sib_node = self.get_from_nodes(sib_val)?;
                 if sib_node.is_overflowing() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::BorrowLeft);
@@ -602,7 +577,10 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             } else if pindex < parent.get_nchild() - 1 {
                 // right sibling
                 let sib_val = parent.get_val(pindex + 1);
-                let sib_node = self.get_from_list(sib_val)?;
+                #[cfg(not(feature = "sync-api"))]
+                let sib_node = self.get_from_nodes(sib_val).await?;
+                #[cfg(feature = "sync-api")]
+                let sib_node = self.get_from_nodes(sib_val)?;
                 if sib_node.is_overflowing() {
                     path.set_sib_node(level, sib_node);
                     path.set_op(level, BtreeMapOp::BorrowRight);
@@ -724,10 +702,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         debug!("search at parent level: {}, search_key: {search_key}", level + 1);
 
         let path = BtreePath::new();
-        #[cfg(not(feature = "sync-api"))]
         let _ = self.do_lookup(&path, &search_key, level + 1).await?;
-        #[cfg(feature = "sync-api")]
-        let _ = self.do_lookup(&path, &search_key, level + 1)?;
         let parent = self.get_node(&path, level + 1);
         let pindex = path.get_index(level + 1);
 
@@ -766,10 +741,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         debug!("propagate - key: {key}, search at parent level: {}, search_key: {search_key}", level + 1);
 
         let path = BtreePath::new();
-        #[cfg(not(feature = "sync-api"))]
         let _ = self.do_lookup(&path, &search_key, level + 1).await?;
-        #[cfg(feature = "sync-api")]
-        let _ = self.do_lookup(&path, &search_key, level + 1)?;
 
         let mut level = level + 1;
         while level < self.get_height() - 1 {
@@ -783,22 +755,11 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     #[maybe_async::maybe_async]
     pub(crate) async fn mark(&self, key: K, level: usize) -> Result<()> {
         let path = BtreePath::new();
-        #[cfg(not(feature = "sync-api"))]
+
         let val = self.do_lookup(&path, &key, level + 1).await?;
-        #[cfg(not(feature = "sync-api"))]
+
         let node = self.get_from_nodes(val).await?;
-        #[cfg(feature = "sync-api")]
-        let val = self.do_lookup(&path, &key, level + 1)?;
-        #[cfg(feature = "sync-api")]
-        let node = if let Some(n) = self.is_node_exist(val) {
-            n
-        } else {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    self.get_from_nodes(val).await
-                })
-            })?
-        };
+
         node.mark_dirty();
         self.set_dirty();
         Ok(())
@@ -868,24 +829,9 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
                 if nchild > 1 {
                     return Ok(false);
                 }
-                 // get back only child node, wee need to check it
+                // get back only child node, wee need to check it
                 let val = root.get_val(nchild - 1);
-                #[cfg(not(feature = "sync-api"))]
-                { // code block
                 node = self.get_from_nodes(val).await?;
-                } // end code block
-                #[cfg(feature = "sync-api")]
-                { // code block
-                node = if let Some(n) = self.is_node_exist(val) {
-                    n
-                } else {
-                    tokio::task::block_in_place(|| {
-                        tokio::runtime::Handle::current().block_on(async {
-                            self.get_from_nodes(val).await
-                        })
-                    })?
-                };
-                } // end code block
             },
             _ => {
                 return Ok(false);
@@ -1263,10 +1209,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
     #[maybe_async::maybe_async]
     async fn lookup(&self, key: K, level: usize) -> Result<V> {
         let path = BtreePath::new();
-        #[cfg(not(feature = "sync-api"))]
         let val = self.do_lookup(&path, &key, level).await?;
-        #[cfg(feature = "sync-api")]
-        let val = self.do_lookup(&path, &key, level)?;
         Ok(val)
     }
 
@@ -1274,10 +1217,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
     async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
         let level = BTREE_NODE_LEVEL_MIN;
         let path = BtreePath::new();
-        #[cfg(not(feature = "sync-api"))]
         let value = self.do_lookup(&path, &key, level).await?;
-        #[cfg(feature = "sync-api")]
-        let value = self.do_lookup(&path, &key, level)?;
 
         if maxblocks == 1 {
             return Ok((value, 1));
@@ -1320,22 +1260,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
             path.set_nonroot_node_none(level);
 
             // get sibling node for next looop
-            #[cfg(not(feature = "sync-api"))]
-            { // code block
             node = self.get_from_nodes(v).await?;
-            } // end code block
-            #[cfg(feature = "sync-api")]
-            { // code block
-            node = if let Some(n) = self.is_node_exist(v) {
-                n
-            } else {
-                tokio::task::block_in_place(|| {
-                    tokio::runtime::Handle::current().block_on(async {
-                        self.get_from_nodes(v).await
-                    })
-                })?
-            };
-            } // end code block
             path.set_nonroot_node(level, node.clone());
             index = 0;
             path.set_index(level, index);
@@ -1346,10 +1271,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
     #[maybe_async::maybe_async]
     async fn insert(&self, key: K, val: V) -> Result<()> {
         let path = BtreePath::new();
-        #[cfg(not(feature = "sync-api"))]
         let res = self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN).await;
-        #[cfg(feature = "sync-api")]
-        let res = self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN);
         match res {
             Ok(_) => {
                 return Err(Error::new(ErrorKind::AlreadyExists, ""));
@@ -1362,7 +1284,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
         }
 
         // key not found
-        let level = self.prepare_insert(&path)?;
+        let level = self.prepare_insert(&path).await?;
         self.commit_insert(&path, key, val, level);
         Ok(())
     }
@@ -1370,16 +1292,13 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
     #[maybe_async::maybe_async]
     async fn delete(&self, key: K) -> Result<()> {
         let path = BtreePath::new();
-        #[cfg(not(feature = "sync-api"))]
         let res = self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN).await;
-        #[cfg(feature = "sync-api")]
-        let res = self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN);
         match res {
             Ok(_) => {}, // do nothing if found
             Err(e) => { return Err(e); }, // return any errors
         }
 
-        let level = self.prepare_delete(&path)?;
+        let level = self.prepare_delete(&path).await?;
         self.commit_delete(&path, level);
         Ok(())
     }
@@ -1387,10 +1306,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
     #[maybe_async::maybe_async]
     async fn seek_key(&self, start: K) -> Result<K> {
         let path = BtreePath::new();
-        #[cfg(not(feature = "sync-api"))]
         let res = self.do_lookup(&path, &start, BTREE_NODE_LEVEL_MIN).await;
-        #[cfg(feature = "sync-api")]
-        let res = self.do_lookup(&path, &start, BTREE_NODE_LEVEL_MIN);
         match res {
             Ok(_) => {
                 return Ok(start);
@@ -1407,9 +1323,6 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
     #[maybe_async::maybe_async]
     async fn last_key(&self) -> Result<K> {
         let path = BtreePath::new();
-        #[cfg(not(feature = "sync-api"))]
-        { self.do_lookup_last(&path).await }
-        #[cfg(feature = "sync-api")]
-        { self.do_lookup_last(&path) }
+        self.do_lookup_last(&path).await
     }
 }
