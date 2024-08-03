@@ -49,7 +49,7 @@ pub trait NodeValue<V> {
 #[allow(async_fn_in_trait)]
 pub trait BlockLoader<V> {
     // return: potentially more meta blocks in vec
-    async fn read(&self, v: &V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>>;
+    fn read(&self, v: V, buf: &mut [u8]) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>> + Send;
     fn from_new_path(&self, new_path: &str) -> Self;
 }
 
@@ -65,8 +65,8 @@ impl<V> NodeValue<V> for u64
     }
 }
 
-impl<V> BlockLoader<V> for u64 {
-    async fn read(&self, v: &V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
+impl<V: Send> BlockLoader<V> for u64 {
+    async fn read(&self, v: V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
         let _ = v;
         let _ = buf;
         Ok(Vec::new())
@@ -82,8 +82,8 @@ impl<V> BlockLoader<V> for u64 {
 #[derive(Clone)]
 pub struct NullBlockLoader;
 
-impl<V> BlockLoader<V> for NullBlockLoader {
-    async fn read(&self, _v: &V, _buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
+impl<V: Send> BlockLoader<V> for NullBlockLoader {
+    async fn read(&self, _v: V, _buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
         todo!()
     }
 

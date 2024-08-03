@@ -294,7 +294,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     #[inline]
-    async fn meta_block_loader(&self, v: &V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
+    async fn meta_block_loader(&self, v: V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
         self.block_loader.read(v, buf).await
     }
 
@@ -308,11 +308,11 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         if let Some(node) = BtreeNode::<K, V>::new_with_id(self.meta_block_size, val) {
             #[cfg(not(feature = "sync-api"))]
-            let more = self.meta_block_loader(&val, node.as_mut()).await?;
+            let more = self.meta_block_loader(val, node.as_mut()).await?;
             #[cfg(feature = "sync-api")]
             let more = tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(async {
-                    self.meta_block_loader(&val, node.as_mut()).await
+                    self.meta_block_loader(val, node.as_mut()).await
                 })
             })?;
             #[cfg(feature = "rc")]
