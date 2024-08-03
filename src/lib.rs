@@ -46,7 +46,6 @@ pub trait NodeValue<V> {
     fn invalid_value() -> V;
 }
 
-#[allow(async_fn_in_trait)]
 pub trait BlockLoader<V> {
     // return: potentially more meta blocks in vec
     fn read(&self, v: V, buf: &mut [u8]) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>> + Send;
