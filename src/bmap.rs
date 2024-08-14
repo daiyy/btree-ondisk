@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use atomic_refcell::AtomicRefCell;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::io::Result;
+use std::io::{Result, ErrorKind};
 use crate::VMap;
 use crate::{NodeValue, BlockLoader};
 use crate::direct::DirectMap;
@@ -533,7 +533,17 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
 
         while key <= last_key {
             let _ = self.do_delete(last_key).await?;
-            last_key = self.last_key().await?;
+            match self.last_key().await {
+                Ok(key) => {
+                    last_key = key;
+                },
+                Err(e) => {
+                    if e.kind() == ErrorKind::NotFound {
+                        return Ok(());
+                    }
+                    return Err(e);
+                }
+            }
         }
         return Ok(());
     }
@@ -542,7 +552,6 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// # Errors
     ///
-    /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
     pub async fn truncate(&mut self, key: K) -> Result<()> {
