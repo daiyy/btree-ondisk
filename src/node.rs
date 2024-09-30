@@ -14,7 +14,7 @@ const MIN_ALIGNED: usize = 8;
 /// btree node descriptor for memory pointer, normally a page
 ///
 /// SAFETY:
-///   node operations in immutable by unsafe code,
+///   node operations mutable by unsafe code,
 ///   this works because all ops for same node are expected to be ran in a single thread
 ///
 #[derive(Debug)]
