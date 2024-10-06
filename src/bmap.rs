@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 #[cfg(feature = "arc")]
 use atomic_refcell::AtomicRefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
 use std::io::{Result, ErrorKind};
 use crate::VMap;
@@ -582,6 +582,130 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             },
             NodeType::Btree(btree) => {
                 return btree.get_stat();
+            },
+        }
+    }
+
+    /// Return iterator for all non-leaf node which including root node
+    pub fn nonleafnode_iter<'b>(&'b self) -> NonLeafNodeIter<'a, 'b, K, V, L> {
+        NonLeafNodeIter::new(self)
+    }
+}
+
+pub struct NonLeafNodeIter<'a, 'b, K, V, L: BlockLoader<V>> {
+    bmap: &'b BMap<'a, K, V, L>,
+    last_root_node_index: usize,
+    root_node_cap_or_nchild: usize,
+    last_btree_node_index: usize,
+    last_btree_node: Option<BtreeNodeRef<'a, K, V>>,
+    btree_node_backlog: VecDeque<BtreeNodeRef<'a, K, V>>,
+}
+
+impl<'a, 'b, K, V, L> NonLeafNodeIter<'a, 'b, K, V, L>
+    where
+        K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        K: From<V> + Into<u64> + From<u64>,
+        V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
+        L: BlockLoader<V> + Clone,
+{
+    fn new(bmap: &'b BMap<'a, K, V, L>) -> Self {
+        let root = BtreeNode::<K, V>::from_slice(bmap.as_slice());
+        let root_node_cap_or_nchild = if root.is_large() {
+            root.get_nchild()
+        } else {
+            let root = DirectNode::<V>::from_slice(bmap.as_slice());
+            root.get_capacity()
+        };
+
+        Self {
+            bmap: bmap,
+            last_root_node_index: 0,
+            root_node_cap_or_nchild: root_node_cap_or_nchild,
+            last_btree_node_index: 0,
+            last_btree_node: None,
+            btree_node_backlog: VecDeque::new(),
+        }
+    }
+}
+
+/// Iterate all values of intermediate nodes from highest level to level 1
+impl<'a, 'b, K, V, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, L>
+    where
+        K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        K: From<V> + Into<u64> + From<u64>,
+        V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
+        L: BlockLoader<V> + Clone,
+{
+    type Item = V;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        match &self.bmap.inner {
+            NodeType::Direct(_) => {
+                // try working on root node only for direct node
+                for idx in self.last_root_node_index..self.root_node_cap_or_nchild {
+                    let node = DirectNode::<V>::from_slice(self.bmap.as_slice());
+                    let v = node.get_val(idx);
+                    self.last_root_node_index += 1;
+                    if !v.is_invalid() {
+                        return Some(v);
+                    }
+                }
+                return None;
+            },
+            NodeType::Btree(btree) => {
+                // try working on root node
+                for idx in self.last_root_node_index..self.root_node_cap_or_nchild {
+                    let node = BtreeNode::<K, V>::from_slice(self.bmap.as_slice());
+                    let v = node.get_val(idx);
+                    assert!(!v.is_invalid());
+                    if node.get_level() >= 2 {
+                        // for L1 node, we don't need to fetch actual data block
+                        // so we limit condition for fetch next level node here to >= 2
+                        let node_ref = futures::executor::block_on(async {
+                            btree.get_from_nodes(v).await.unwrap_or_else(|_| panic!("failed to fetch node {v}"))
+                        });
+                        self.btree_node_backlog.push_back(node_ref);
+                    }
+                    self.last_root_node_index += 1;
+                    return Some(v);
+                }
+
+                // try find the node we currently working on
+                let node = if let Some(node) = &self.last_btree_node {
+                    node
+                } else {
+                    let Some(node) = self.btree_node_backlog.pop_front() else {
+                        // if no node currently working and no more nodes in backlog
+                        // we reached the end
+                        return None;
+                    };
+                    self.last_btree_node_index = 0;
+                    self.last_btree_node = Some(node);
+                    self.last_btree_node.as_ref().expect("unable to get last btree node")
+                };
+
+                // try working on one intermediate node
+                let v = node.get_val(self.last_btree_node_index);
+                assert!(!v.is_invalid());
+                if node.get_level() >= 2 {
+                    // for L1 node, we don't need to fetch actual data block
+                    // so we limit condition for fetch next level node here to >= 2
+                    let node_ref = futures::executor::block_on(async {
+                        btree.get_from_nodes(v).await.unwrap_or_else(|_| panic!("failed to fetch node {v}"))
+                    });
+                    self.btree_node_backlog.push_back(node_ref);
+                }
+                self.last_btree_node_index += 1;
+                if self.last_btree_node_index >= node.get_nchild() {
+                    // reach the end of this node,
+                    // reset last btree node,
+                    // will fetch next available node from backlog next time
+                    self.last_btree_node = None;
+                }
+                return Some(v);
             },
         }
     }
