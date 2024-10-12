@@ -586,6 +586,30 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
+    /// Get user data from root node
+    pub fn get_userdata(&self) -> u32 {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.get_userdata();
+            },
+            NodeType::Btree(btree) => {
+                return btree.get_userdata();
+            },
+        }
+    }
+
+    /// Set user data into root node
+    pub fn set_userdata(&self, data: u32) {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.set_userdata(data);
+            },
+            NodeType::Btree(btree) => {
+                return btree.set_userdata(data);
+            },
+        }
+    }
+
     /// Return iterator for all non-leaf node which including root node
     pub fn nonleafnode_iter<'b>(&'b self) -> NonLeafNodeIter<'a, 'b, K, V, L> {
         NonLeafNodeIter::new(self)

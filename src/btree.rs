@@ -294,6 +294,16 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     #[inline]
+    pub(crate) fn get_userdata(&self) -> u32 {
+        self.root.get_userdata()
+    }
+
+    #[inline]
+    pub(crate) fn set_userdata(&self, data: u32) {
+        self.root.set_userdata(data);
+    }
+
+    #[inline]
     async fn meta_block_loader(&self, v: V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
         self.block_loader.read(v, buf).await
     }

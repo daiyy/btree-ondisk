@@ -244,6 +244,19 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
+    pub fn get_userdata(&self) -> u32 {
+        self.header.userdata
+    }
+
+    #[inline]
+    pub fn set_userdata(&self, data: u32) {
+        let ptr = ptr::addr_of!(self.header.userdata) as *mut u32;
+        unsafe {
+            ptr::write_volatile(ptr, data);
+        }
+    }
+
+    #[inline]
     pub fn get_capacity(&self) -> usize {
         self.capacity
     }
@@ -619,6 +632,19 @@ impl<'a, V> DirectNode<'a, V>
                 ptr::addr_of!(self.valmap[index]) as *mut V,
                 1
             )
+        }
+    }
+
+    #[inline]
+    pub fn get_userdata(&self) -> u32 {
+        self.header.userdata
+    }
+
+    #[inline]
+    pub fn set_userdata(&self, data: u32) {
+        let ptr = ptr::addr_of!(self.header.userdata) as *mut u32;
+        unsafe {
+            ptr::write_volatile(ptr, data);
         }
     }
 

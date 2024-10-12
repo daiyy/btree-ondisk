@@ -107,6 +107,16 @@ impl<'a, K, V> DirectMap<'a, K, V>
         self.data.as_slice()
     }
 
+    #[inline]
+    pub(crate) fn get_userdata(&self) -> u32 {
+        self.root.get_userdata()
+    }
+
+    #[inline]
+    pub(crate) fn set_userdata(&self, data: u32) {
+        self.root.set_userdata(data);
+    }
+
     // test if map is dirty, expose to crate
     pub(crate) fn dirty(&self) -> bool {
         self.is_dirty()

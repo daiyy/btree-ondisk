@@ -5,5 +5,5 @@ pub struct NodeHeader {
     pub flags: u8,
     pub level: u8,
     pub nchildren: u16,
-    pub pad: u32,
+    pub userdata: u32,
 }
