@@ -405,7 +405,12 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         }
 
         let (mut found, mut index) = root.lookup(key);
-        let mut value = root.get_val(index);
+        // set invalid value when returned index out of root node capacity
+        let mut value = if index > root.get_capacity() - 1 {
+            V::invalid_value()
+        } else {
+            root.get_val(index)
+        };
 
         path.set_index(level, index);
 
