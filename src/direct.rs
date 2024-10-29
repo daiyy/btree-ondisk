@@ -130,7 +130,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         let index = key.into() as usize;
         let val = self.root.get_val(index);
         if val.is_invalid() {
-            return Err(Error::new(ErrorKind::InvalidData, ""));
+            return Err(Error::new(ErrorKind::NotFound, ""));
         }
         self.root.set_val(index, &newval);
         Ok(())
