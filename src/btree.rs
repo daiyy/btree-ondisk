@@ -1051,7 +1051,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         if mv {
             let sib_node = path.get_sib_node(level);
-            path.set_sib_node(level, sib_node);
+            path.set_nonroot_node(level, sib_node);
             path.set_sib_node_none(level);
             let nchild = node.get_nchild();
             path.set_index(level, path.get_index(level) - nchild);
