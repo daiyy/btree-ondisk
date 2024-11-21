@@ -49,7 +49,7 @@ pub trait NodeValue<V> {
 pub trait BlockLoader<V> {
     // return: potentially more meta blocks in vec
     fn read(&self, v: V, buf: &mut [u8]) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>> + Send;
-    fn from_new_path(&self, new_path: &str) -> Self;
+    fn from_new_path(self, new_path: &str) -> Self;
 }
 
 impl<V> NodeValue<V> for u64
@@ -71,7 +71,7 @@ impl<V: Send> BlockLoader<V> for u64 {
         Ok(Vec::new())
     }
 
-    fn from_new_path(&self, new_path: &str) -> Self {
+    fn from_new_path(self, new_path: &str) -> Self {
         let _ = new_path;
         self.clone()
     }
@@ -86,7 +86,7 @@ impl<V: Send> BlockLoader<V> for NullBlockLoader {
         todo!()
     }
 
-    fn from_new_path(&self, _: &str) -> Self {
+    fn from_new_path(self, _: &str) -> Self {
         todo!()
     }
 }
