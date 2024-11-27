@@ -324,6 +324,40 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     }
 
     #[maybe_async::maybe_async]
+    async fn do_insert_or_update(&mut self, key: K, val: V) -> Result<Option<V>> {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                if direct.is_key_exceed(key) {
+                    // convert and insert
+                    let data = direct.data.clone();
+                    #[cfg(feature = "rc")]
+                    let last_seq = direct.last_seq.take();
+                    #[cfg(feature = "arc")]
+                    let last_seq = direct.last_seq.load(Ordering::SeqCst).into();
+                    let _ = self.convert_and_insert(data, self.meta_block_size, last_seq, key, val).await?;
+                    return Ok(None);
+                }
+                return direct.insert_or_update(key, val).await;
+            },
+            NodeType::Btree(btree) => {
+                return btree.insert_or_update(key, val).await;
+            },
+        }
+    }
+
+    /// Insert or Update a key/value pair,
+    /// Return old value in Option if key is already exists.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found, if key inserted out of node's capacity. **direct node ONLY**
+    /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
+    pub async fn insert_or_update(&mut self, key: K, val: V) -> Result<Option<V>> {
+        self.do_insert_or_update(key, val).await
+    }
+
+    #[maybe_async::maybe_async]
     async fn do_delete(&mut self, key: K) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {

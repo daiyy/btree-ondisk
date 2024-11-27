@@ -1305,6 +1305,32 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
     }
 
     #[maybe_async::maybe_async]
+    async fn insert_or_update(&self, key: K, val: V) -> Result<Option<V>> {
+        let path = BtreePath::new();
+        let res = self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN).await;
+        match res {
+            Ok(old_val) => {
+                let node = self.get_node(&path, BTREE_NODE_LEVEL_MIN);
+                let index = path.get_index(BTREE_NODE_LEVEL_MIN);
+                node.set_val(index, &val);
+                node.mark_dirty();
+                self.set_dirty();
+                return Ok(Some(old_val));
+            },
+            Err(e) => {
+                if e.kind() != ErrorKind::NotFound {
+                    return Err(e);
+                }
+            },
+        }
+
+        // key not found
+        let level = self.prepare_insert(&path).await?;
+        self.commit_insert(&path, key, val, level);
+        Ok(None)
+    }
+
+    #[maybe_async::maybe_async]
     async fn delete(&self, key: K) -> Result<()> {
         let path = BtreePath::new();
         let res = self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN).await;

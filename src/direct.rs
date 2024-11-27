@@ -222,6 +222,24 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
     }
 
     #[maybe_async::maybe_async]
+    async fn insert_or_update(&self, key: K, val: V) -> Result<Option<V>> {
+        let index = key.into() as usize;
+        if index > self.root.get_capacity() - 1 {
+            return Err(Error::new(ErrorKind::NotFound, ""));
+        }
+        let old_val = if !self.root.get_val(index).is_invalid() {
+            // old val
+            Some(self.root.get_val(index))
+        } else {
+            None
+        };
+        self.set_dirty();
+        let index = key.into() as usize;
+        self.root.set_val(index, &val);
+        Ok(old_val)
+    }
+
+    #[maybe_async::maybe_async]
     async fn delete(&self, key: K) -> Result<()> {
         let index = key.into() as usize;
         if index > self.root.get_capacity() ||

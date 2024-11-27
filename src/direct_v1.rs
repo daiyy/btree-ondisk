@@ -155,6 +155,23 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         Ok(())
     }
 
+    async fn insert_or_update(&self, key: K, val: V) -> Result<Option<V>> {
+        let index = key.into() as usize;
+        if index > self.root.borrow().get_capacity() - 1 {
+            return Err(Error::new(ErrorKind::NotFound, ""));
+        }
+        let old_val = if !self.root.borrow().get_val(index).is_invalid() {
+            // old val
+            Some(self.root.borrow().get_val(index))
+        } else {
+            None
+        };
+        self.set_dirty();
+        let index = key.into() as usize;
+        self.root.borrow_mut().set_val(index, &val);
+        Ok(old_val)
+    }
+
     async fn delete(&self, key: K) -> Result<()> {
         let index = key.into() as usize;
         if index > self.root.borrow().get_capacity() ||
