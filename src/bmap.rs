@@ -722,9 +722,12 @@ impl<'a, 'b, K, V, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, L>
                     if node.get_level() >= 2 {
                         // for L1 node, we don't need to fetch actual data block
                         // so we limit condition for fetch next level node here to >= 2
+                        #[cfg(not(feature = "sync-api"))]
                         let node_ref = futures::executor::block_on(async {
                             btree.get_from_nodes(v).await.unwrap_or_else(|_| panic!("failed to fetch node {v}"))
                         });
+                        #[cfg(feature = "sync-api")]
+                        let node_ref = btree.get_from_nodes(v).unwrap_or_else(|_| panic!("failed to fetch node {v}"));
                         self.btree_node_backlog.push_back(node_ref);
                     }
                     self.last_root_node_index += 1;
@@ -751,9 +754,12 @@ impl<'a, 'b, K, V, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, L>
                 if node.get_level() >= 2 {
                     // for L1 node, we don't need to fetch actual data block
                     // so we limit condition for fetch next level node here to >= 2
+                    #[cfg(not(feature = "sync-api"))]
                     let node_ref = futures::executor::block_on(async {
                         btree.get_from_nodes(v).await.unwrap_or_else(|_| panic!("failed to fetch node {v}"))
                     });
+                    #[cfg(feature = "sync-api")]
+                    let node_ref = btree.get_from_nodes(v).unwrap_or_else(|_| panic!("failed to fetch node {v}"));
                     self.btree_node_backlog.push_back(node_ref);
                 }
                 self.last_btree_node_index += 1;
