@@ -291,7 +291,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     }
 
     #[maybe_async::maybe_async]
-    async fn do_insert(&mut self, key: K, val: V) -> Result<()> {
+    async fn do_try_insert(&mut self, key: K, val: V) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
                 if direct.is_key_exceed(key) {
@@ -319,8 +319,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * AlreadyExists - key already exists, new value will not be updated into map.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn insert(&mut self, key: K, val: V) -> Result<()> {
-        self.do_insert(key, val).await
+    pub async fn try_insert(&mut self, key: K, val: V) -> Result<()> {
+        self.do_try_insert(key, val).await
     }
 
     #[maybe_async::maybe_async]
@@ -353,7 +353,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found, if key inserted out of node's capacity. **direct node ONLY**
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn insert_or_update(&mut self, key: K, val: V) -> Result<Option<V>> {
+    pub async fn insert(&mut self, key: K, val: V) -> Result<Option<V>> {
         self.do_insert_or_update(key, val).await
     }
 
