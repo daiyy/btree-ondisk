@@ -42,9 +42,12 @@ pub trait VMap<K, V>
     async fn last_key(&self) -> Result<K>;
 }
 
+pub const VALID_EXTERNAL_ASSIGN_MASK: u64 = 0xFFFF_0000_0000_0000;
+
 pub trait NodeValue<V> {
     fn is_invalid(&self) -> bool;
     fn invalid_value() -> V;
+    fn is_valid_extern_assign(&self) -> bool;
 }
 
 pub trait BlockLoader<V> {
@@ -62,6 +65,10 @@ impl<V> NodeValue<V> for u64
 
     fn invalid_value() -> V {
        u64::MIN.into()
+    }
+
+    fn is_valid_extern_assign(&self) -> bool {
+        (self & VALID_EXTERNAL_ASSIGN_MASK) != 0
     }
 }
 

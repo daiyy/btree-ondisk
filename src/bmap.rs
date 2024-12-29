@@ -508,6 +508,11 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
     pub async fn assign(&self, key: K, newval: V, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+        // FIXME: could be remove if have confidence for value format
+        if !newval.is_valid_extern_assign() {
+            // potiential conflict with seq value internal used
+            panic!("assign value is not in a valid format");
+        }
         match &self.inner {
             NodeType::Direct(direct) => {
                 return direct.assign(key, newval).await;
