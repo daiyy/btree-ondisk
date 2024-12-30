@@ -20,8 +20,9 @@ indicatif = "0.17"
 crossbeam-skiplist = "0.1.3"
 
 [features]
-default = ["rc"]
+default = ["rc", "value-check"]
 rc = []
+value-check = []
 arc = ["atomic_refcell"]
 sync-api = ["dep:tokio", "maybe-async/is_sync"]
 
