@@ -23,6 +23,7 @@ pub mod direct_v1;
 mod direct;
 pub mod bmap;
 mod utils;
+pub mod loader;
 
 #[maybe_async::maybe_async(AFIT)]
 #[allow(async_fn_in_trait)]
@@ -82,19 +83,5 @@ impl<V: Send> BlockLoader<V> for u64 {
     fn from_new_path(self, new_path: &str) -> Self {
         let _ = new_path;
         self.clone()
-    }
-}
-
-// null block loader for test purpose
-#[derive(Clone)]
-pub struct NullBlockLoader;
-
-impl<V: Send> BlockLoader<V> for NullBlockLoader {
-    async fn read(&self, _v: V, _buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
-        todo!()
-    }
-
-    fn from_new_path(self, _: &str) -> Self {
-        todo!()
     }
 }
