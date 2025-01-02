@@ -333,6 +333,10 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     // move n k,v pairs from head of right append to left
     // and move rest of right to it's head
     pub fn move_left(left: &BtreeNode<K, V>, right: &BtreeNode<K, V>, n: usize) {
+
+        // input param protection
+        if n == 0 { return; }
+
         let mut lnchild = left.get_nchild();
         let mut rnchild = right.get_nchild();
 
@@ -367,6 +371,10 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     // reserve space at head of right for n slot
     // move n k,v pairs from tail of left to head of right
     pub fn move_right(left: &BtreeNode<K, V>, right: &BtreeNode<K, V>, n: usize) {
+
+        // input param protection
+        if n == 0 { return; }
+
         let mut lnchild = left.get_nchild();
         let mut rnchild = right.get_nchild();
 
