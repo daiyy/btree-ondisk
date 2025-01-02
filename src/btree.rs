@@ -423,7 +423,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
                 index = 0;
             }
 
-            if index < node.get_nchild() {
+            if index < node.get_capacity() {
                 value = node.get_val(index);
             } else {
                 if found || level != BTREE_NODE_LEVEL_MIN {
