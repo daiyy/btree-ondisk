@@ -23,7 +23,9 @@ pub mod direct_v1;
 mod direct;
 pub mod bmap;
 mod utils;
-pub mod loader;
+mod loader;
+pub use crate::loader::null::NullBlockLoader;
+pub use crate::loader::memory::MemoryBlockLoader;
 
 #[maybe_async::maybe_async(AFIT)]
 #[allow(async_fn_in_trait)]
