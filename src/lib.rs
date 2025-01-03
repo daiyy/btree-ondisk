@@ -46,6 +46,7 @@ pub trait VMap<K, V>
 }
 
 pub const VALID_EXTERNAL_ASSIGN_MASK: u64 = 0xFFFF_0000_0000_0000;
+pub const DEFAULT_CACHE_UNLIMITED: usize = usize::MAX; // unlimited by default
 
 pub trait NodeValue<V> {
     fn is_invalid(&self) -> bool;

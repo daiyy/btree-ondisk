@@ -6,12 +6,13 @@ use std::cell::RefCell;
 #[cfg(feature = "arc")]
 use std::sync::Arc;
 #[cfg(feature = "arc")]
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::marker::PhantomData;
 use std::io::{Error, ErrorKind, Result};
 use crate::VMap;
 use crate::NodeValue;
 use crate::node::*;
+use crate::DEFAULT_CACHE_UNLIMITED;
 
 #[cfg(feature = "rc")]
 pub struct DirectMap<'a, K, V> {
@@ -19,6 +20,7 @@ pub struct DirectMap<'a, K, V> {
     pub root: Rc<Box<DirectNode<'a, V>>>,
     pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
+    pub cache_limit: RefCell<usize>,
     pub marker: PhantomData<K>,
 }
 
@@ -28,6 +30,7 @@ pub struct DirectMap<'a, K, V> {
     pub root: Arc<Box<DirectNode<'a, V>>>,
     pub last_seq: Arc<AtomicU64>,
     pub dirty: Arc<AtomicBool>,
+    pub cache_limit: Arc<AtomicUsize>,
     pub marker: PhantomData<K>,
 }
 
@@ -117,6 +120,26 @@ impl<'a, K, V> DirectMap<'a, K, V>
         self.root.set_userdata(data);
     }
 
+    #[inline]
+    pub(crate) fn get_cache_limit(&self) -> usize {
+        #[cfg(feature = "rc")]
+        return self.cache_limit.borrow().to_owned();
+        #[cfg(feature = "arc")]
+        return self.cache_limit.load(Ordering::SeqCst);
+    }
+
+    #[cfg(feature = "rc")]
+    #[inline]
+    pub(crate) fn set_cache_limit(&self, limit: usize) {
+        *self.cache_limit.borrow_mut() = limit;
+    }
+
+    #[cfg(feature = "arc")]
+    #[inline]
+    pub(crate) fn set_cache_limit(&self, limit: usize) {
+        self.cache_limit.store(limit, Ordering::SeqCst);
+    }
+
     // test if map is dirty, expose to crate
     pub(crate) fn dirty(&self) -> bool {
         self.is_dirty()
@@ -159,6 +182,10 @@ impl<'a, K, V> DirectMap<'a, K, V>
             last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(V::invalid_value()))),
             #[cfg(feature = "arc")]
             dirty: Arc::new(AtomicBool::new(false)),
+            #[cfg(feature = "rc")]
+            cache_limit: RefCell::new(DEFAULT_CACHE_UNLIMITED),
+            #[cfg(feature = "arc")]
+            cache_limit: Arc::new(AtomicUsize::new(DEFAULT_CACHE_UNLIMITED)),
             marker: PhantomData,
         }
     }

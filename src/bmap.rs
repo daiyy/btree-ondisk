@@ -6,7 +6,7 @@ use std::cell::RefCell;
 #[cfg(feature = "arc")]
 use std::sync::Arc;
 #[cfg(feature = "arc")]
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 #[cfg(feature = "arc")]
 use atomic_refcell::AtomicRefCell;
 use std::collections::{HashMap, VecDeque};
@@ -78,7 +78,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         L: BlockLoader<V>,
 {
     #[maybe_async::maybe_async]
-    async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: V, key: K, val: V) -> Result<()> {
+    async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: V, limit: usize, key: K, val: V) -> Result<()> {
         // collect all valid value from old direct root
         let mut old_kv = Vec::new();
         let direct = DirectNode::<V>::from_slice(&data);
@@ -112,6 +112,10 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             dirty: Arc::new(AtomicBool::new(true)),
             meta_block_size: meta_block_size,
+            #[cfg(feature = "rc")]
+            cache_limit: RefCell::new(limit),
+            #[cfg(feature = "arc")]
+            cache_limit: Arc::new(AtomicUsize::new(limit)),
             block_loader: self.block_loader.take().unwrap(),
         };
 
@@ -169,7 +173,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
 
     #[maybe_async::maybe_async]
     async fn convert_to_direct(&mut self, _key: K, input: &Vec<(K, V)>,
-            root_node_size: usize, last_seq: V, block_loader: L) -> Result<()> {
+            root_node_size: usize, last_seq: V, limit: usize, block_loader: L) -> Result<()> {
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
         let direct = DirectMap {
@@ -186,6 +190,10 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(last_seq))),
             #[cfg(feature = "arc")]
             dirty: Arc::new(AtomicBool::new(true)),
+            #[cfg(feature = "rc")]
+            cache_limit: RefCell::new(limit),
+            #[cfg(feature = "arc")]
+            cache_limit: Arc::new(AtomicUsize::new(limit)),
             marker: PhantomData,
         };
 
@@ -301,7 +309,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
                     let last_seq = direct.last_seq.take();
                     #[cfg(feature = "arc")]
                     let last_seq = direct.last_seq.load(Ordering::SeqCst).into();
-                    return self.convert_and_insert(data, self.meta_block_size, last_seq, key, val).await;
+                    let limit = direct.get_cache_limit();
+                    return self.convert_and_insert(data, self.meta_block_size, last_seq, limit, key, val).await;
                 }
                 return direct.insert(key, val).await;
             },
@@ -334,7 +343,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
                     let last_seq = direct.last_seq.take();
                     #[cfg(feature = "arc")]
                     let last_seq = direct.last_seq.load(Ordering::SeqCst).into();
-                    let _ = self.convert_and_insert(data, self.meta_block_size, last_seq, key, val).await?;
+                    let limit = direct.get_cache_limit();
+                    let _ = self.convert_and_insert(data, self.meta_block_size, last_seq, limit, key, val).await?;
                     return Ok(None);
                 }
                 return direct.insert_or_update(key, val).await;
@@ -371,10 +381,10 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
                     v.retain(|(_k, _)| _k != &key);
                     #[cfg(feature = "rc")]
                     let _ = self.convert_to_direct(key, &v,
-                        btree.data.len(), btree.last_seq.take(), btree.block_loader.clone()).await?;
+                        btree.data.len(), btree.last_seq.take(), btree.get_cache_limit(), btree.block_loader.clone()).await?;
                     #[cfg(feature = "arc")]
                     let _ = self.convert_to_direct(key, &v,
-                        btree.data.len(), btree.last_seq.load(Ordering::SeqCst).into(), btree.block_loader.clone()).await?;
+                        btree.data.len(), btree.last_seq.load(Ordering::SeqCst).into(), btree.get_cache_limit(), btree.block_loader.clone()).await?;
                     return Ok(());
                 }
                 return btree.delete(key).await;
@@ -645,6 +655,30 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             },
             NodeType::Btree(btree) => {
                 return btree.set_userdata(data);
+            },
+        }
+    }
+
+    /// Get limit of max nodes count cached in memory for btree
+    pub fn get_cache_limit(&self) -> usize {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.get_cache_limit();
+            },
+            NodeType::Btree(btree) => {
+                return btree.get_cache_limit();
+            },
+        }
+    }
+
+    /// Set limit of max nodes count cached in memory for btree
+    pub fn set_cache_limit(&self, limit: usize) {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.set_cache_limit(limit);
+            },
+            NodeType::Btree(btree) => {
+                return btree.set_cache_limit(limit);
             },
         }
     }

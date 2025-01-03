@@ -7,7 +7,7 @@ use std::cell::RefCell;
 #[cfg(feature = "arc")]
 use std::sync::Arc;
 #[cfg(feature = "arc")]
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 #[cfg(feature = "arc")]
 use atomic_refcell::AtomicRefCell;
 use std::io::{Error, ErrorKind, Result};
@@ -16,6 +16,7 @@ use crate::node::*;
 use crate::VMap;
 use crate::bmap::BMapStat;
 use crate::{NodeValue, BlockLoader};
+use crate::DEFAULT_CACHE_UNLIMITED;
 
 pub(crate) type BtreeLevel = usize;
 #[cfg(feature = "rc")]
@@ -165,6 +166,7 @@ pub struct BtreeMap<'a, K, V, L: BlockLoader<V>> {
     pub last_seq: RefCell<V>,
     pub dirty: RefCell<bool>,
     pub meta_block_size: usize,
+    pub cache_limit: RefCell<usize>,
     pub block_loader: L,
 }
 
@@ -176,6 +178,7 @@ pub struct BtreeMap<'a, K, V, L: BlockLoader<V>> {
     pub last_seq: Arc<AtomicU64>,
     pub dirty: Arc<AtomicBool>,
     pub meta_block_size: usize,
+    pub cache_limit: Arc<AtomicUsize>,
     pub block_loader: L,
 }
 
@@ -281,12 +284,14 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     #[inline]
     pub(crate) fn clear_dirty(&self) {
         *self.dirty.borrow_mut() = false;
+        self.evict();
     }
 
     #[cfg(feature = "arc")]
     #[inline]
     pub(crate) fn clear_dirty(&self) {
         self.dirty.store(false, Ordering::SeqCst);
+        self.evict();
     }
 
     pub fn as_slice(&self) -> &[u8] {
@@ -301,6 +306,27 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     #[inline]
     pub(crate) fn set_userdata(&self, data: u32) {
         self.root.set_userdata(data);
+    }
+
+    #[inline]
+    pub(crate) fn get_cache_limit(&self) -> usize {
+        #[cfg(feature = "rc")]
+        return self.cache_limit.borrow().to_owned();
+        #[cfg(feature = "arc")]
+        return self.cache_limit.load(Ordering::SeqCst);
+    }
+
+    #[cfg(feature = "rc")]
+    #[inline]
+    pub(crate) fn set_cache_limit(&self, limit: usize) {
+         *self.cache_limit.borrow_mut() = limit;
+         self.evict();
+    }
+
+    #[cfg(feature = "arc")]
+    #[inline]
+    pub(crate) fn set_cache_limit(&self, limit: usize) {
+         self.cache_limit.store(limit, Ordering::SeqCst); 
     }
 
     #[inline]
@@ -702,6 +728,48 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         v
     }
 
+    // a simple process to evict node in btree
+    pub(crate) fn evict(&self) {
+        let limit = self.get_cache_limit();
+        if limit == DEFAULT_CACHE_UNLIMITED {
+            return;
+        }
+        let mut nodes: Vec<BtreeNodeRef<'_, K, V>> = self.nodes.borrow()
+                    .iter()
+                    .filter_map(|(key, node)| {
+                        let id = node.id();
+                        assert!(key == id);
+                        if id.is_valid_extern_assign() {
+                            Some(node.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+        // sort by id in asc
+        nodes.sort_by(|a, b|
+            a.id().partial_cmp(b.id()).unwrap()
+        );
+        // then sort by level in asc
+        nodes.sort_by(|a, b|
+            a.get_level().partial_cmp(&b.get_level()).unwrap()
+        );
+
+        let total = nodes.len();
+        if limit >= total {
+            return;
+        }
+        let mut count = total - limit;
+        while count > 0 {
+            let node = nodes.pop().expect("failed to get evict candidate");
+            let id = node.id();
+            let n = self.nodes.borrow_mut().remove(&id);
+            assert!(n.is_some());
+            count -= 1;
+        }
+    }
+
     #[maybe_async::maybe_async]
     pub(crate) async fn assign(&self, key: K, newval: V, meta_node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
 
@@ -802,6 +870,10 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             dirty: Arc::new(AtomicBool::new(false)),
             meta_block_size: meta_block_size,
+            #[cfg(feature = "rc")]
+            cache_limit: RefCell::new(DEFAULT_CACHE_UNLIMITED),
+            #[cfg(feature = "arc")]
+            cache_limit: Arc::new(AtomicUsize::new(DEFAULT_CACHE_UNLIMITED)),
             block_loader: block_loader,
         }
     }
