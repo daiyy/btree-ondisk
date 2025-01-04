@@ -58,15 +58,7 @@ impl<'a> MemoryFile<'a> {
             return Ok(());
         }
 
-        let mut dirty_meta_vec = self.bmap.lookup_dirty();
-        // sort by id in asc
-        dirty_meta_vec.sort_by(|a, b|
-            a.id().partial_cmp(b.id()).unwrap()
-        );
-        // then sort by level in desc
-        dirty_meta_vec.sort_by(|a, b|
-            b.get_level().partial_cmp(&a.get_level()).unwrap()
-        );
+        let dirty_meta_vec = self.bmap.lookup_dirty();
 
         let mut meta_nodes: VecDeque<u64> = VecDeque::new();
 
