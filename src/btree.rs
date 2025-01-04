@@ -725,6 +725,14 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
                 v.push(n.clone());
             }
         }
+        // sort by id in asc
+        v.sort_by(|a, b|
+            a.id().partial_cmp(b.id()).unwrap()
+        );
+        // then sort by level in desc
+        v.sort_by(|a, b|
+            b.get_level().partial_cmp(&a.get_level()).unwrap()
+        );
         v
     }
 
