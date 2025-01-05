@@ -211,6 +211,11 @@ async fn do_op(op: usize, file: &mut MemoryFile<'_>, blk_idx: u64) -> Result<()>
 }
 
 #[maybe_async::maybe_async]
+async fn cleanup(file: &mut MemoryFile<'_>) -> Result<()> {
+    file.bmap.truncate(0).await
+}
+
+#[maybe_async::maybe_async]
 async fn run() -> Result<()> {
     let root_node_size = 56;
     let meta_node_size = 4096;
@@ -247,6 +252,15 @@ async fn run() -> Result<()> {
     let iter = 10_000_000;
     rand_rwd(&mut file, iter).await;
     file.flush().await?;
+    assert!(file.dirty_count() == 0);
+    file.dump_stat();
+    println!("");
+
+    println!("=== cleanup ====");
+    let res = cleanup(&mut file).await;
+    println!("truncate result {res:?}");
+    let res = file.flush().await?;
+    println!("flush result {res:?}");
     assert!(file.dirty_count() == 0);
     file.dump_stat();
     Ok(())
