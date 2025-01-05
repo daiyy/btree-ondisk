@@ -843,6 +843,17 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         Ok(())
     }
 
+    // lite version of propagate only for inner insert and delete at BTREE_NODE_LEVEL_MIN
+    pub(crate) fn propagate_lite(&self, path: &BtreePath<'a, K, V>) {
+        // MIN level node has been marked dirty by insert or delete
+        let mut level = BTREE_NODE_LEVEL_MIN + 1;
+        while level < self.get_height() - 1 {
+            let node = self.get_node(&path, level);
+            node.mark_dirty();
+            level += 1;
+        }
+    }
+
     #[maybe_async::maybe_async]
     pub(crate) async fn mark(&self, key: K, level: usize) -> Result<()> {
         let path = BtreePath::new();
@@ -1381,6 +1392,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
         // key not found
         let level = self.prepare_insert(&path).await?;
         self.commit_insert(&path, key, val, level);
+        self.propagate_lite(&path);
         Ok(())
     }
 
@@ -1394,6 +1406,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
                 let index = path.get_index(BTREE_NODE_LEVEL_MIN);
                 node.set_val(index, &val);
                 node.mark_dirty();
+                self.propagate_lite(&path);
                 self.set_dirty();
                 return Ok(Some(old_val));
             },
@@ -1407,6 +1420,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
         // key not found
         let level = self.prepare_insert(&path).await?;
         self.commit_insert(&path, key, val, level);
+        self.propagate_lite(&path);
         Ok(None)
     }
 
@@ -1421,6 +1435,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
 
         let level = self.prepare_delete(&path).await?;
         self.commit_delete(&path, level);
+        self.propagate_lite(&path);
         Ok(())
     }
 
