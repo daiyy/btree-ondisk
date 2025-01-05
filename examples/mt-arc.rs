@@ -3,6 +3,7 @@ use std::time::{Instant, Duration};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
+use btree_ondisk::VALID_EXTERNAL_ASSIGN_MASK;
 
 const DEFAULT_FILE_SIZE: usize = 100 * 1024 * 1024 * 1024;
 const MAX_CONCURRENCY: usize = 4;
@@ -56,7 +57,7 @@ async fn single() {
 
         let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
-            let _ = file.bmap.assign(i, i, None).await;
+            let _ = file.bmap.assign(i, i | VALID_EXTERNAL_ASSIGN_MASK, None).await;
         }
         let avg = start.elapsed() / iter;
         println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "ASSIGN", start.elapsed(), avg);
@@ -148,7 +149,7 @@ async fn multi() {
             let end = blk_idx_start + ((x + 1) * iter) as u64;
             for i in begin..end as u64 {
                 let file = clone.lock().await;
-                let _ = file.bmap.assign(i, i, None).await;
+                let _ = file.bmap.assign(i, i | VALID_EXTERNAL_ASSIGN_MASK, None).await;
             }
             let avg = start.elapsed() / iter as u32;
             avg
@@ -274,7 +275,7 @@ async fn multi_atomic() {
                 let i = begin.fetch_add(1, Ordering::SeqCst);
                 if i >= end { break; }
                 let file = clone.lock().await;
-                let _ = file.bmap.assign(i, i, None).await;
+                let _ = file.bmap.assign(i, i | VALID_EXTERNAL_ASSIGN_MASK, None).await;
             }
             let avg = start.elapsed() / iter as u32;
             avg

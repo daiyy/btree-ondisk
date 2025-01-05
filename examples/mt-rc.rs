@@ -1,5 +1,6 @@
 mod mt;
 use std::time::Instant;
+use btree_ondisk::VALID_EXTERNAL_ASSIGN_MASK;
 
 const DEFAULT_FILE_SIZE: usize = 100 * 1024 * 1024 * 1024;
 
@@ -34,7 +35,7 @@ async fn main() {
 
         let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
-            let _ = file.bmap.assign(i, i, None).await;
+            let _ = file.bmap.assign(i, i | VALID_EXTERNAL_ASSIGN_MASK, None).await;
         }
         let avg = start.elapsed() / iter;
         println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "ASSIGN", start.elapsed(), avg);
