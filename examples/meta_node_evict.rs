@@ -42,7 +42,6 @@ impl<'a> MemoryFile<'a> {
     async fn write(&mut self, off: usize) -> Result<()> {
         let blk_idx = (off / self.data_block_size) as u64;
         let _  = self.bmap.insert(blk_idx, 0).await;
-        self.bmap.propagate(blk_idx, None).await?;
         self.data_blocks_dirty.insert(blk_idx);
         Ok(())
     }
