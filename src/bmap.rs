@@ -512,6 +512,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// **meta node:** use node to find value entry, key is unused.
     ///
+    /// use [`BMap::assign_meta_node`] and [`BMap::assign_data_node`] for more explict semantics
+    ///
     /// # Errors
     ///
     /// * NotFound - key not found.
@@ -529,6 +531,53 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             },
             NodeType::Btree(btree) => {
                 return btree.assign(key, newval, node).await;
+            },
+        }
+    }
+
+    /// Assign extneral value to meta node.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found.
+    /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
+    pub async fn assign_meta_node(&self, newval: V, node: BtreeNodeRef<'_, K, V>) -> Result<()> {
+        #[cfg(feature = "value-check")]
+        if !newval.is_valid_extern_assign() {
+            // potiential conflict with seq value internal used
+            panic!("assign value is not in a valid format");
+        }
+        match &self.inner {
+            NodeType::Direct(_direct) => {
+                return Ok(());
+            },
+            NodeType::Btree(btree) => {
+                // key is unused, so use 0
+                return btree.assign(0.into(), newval, Some(node)).await;
+            },
+        }
+    }
+
+    /// Assign external value to data node.
+    ///
+    /// # Errors
+    ///
+    /// * NotFound - key not found.
+    /// * OutOfMemory - insufficient memory.
+    #[maybe_async::maybe_async]
+    pub async fn assign_data_node(&self, key: K, newval: V) -> Result<()> {
+        #[cfg(feature = "value-check")]
+        if !newval.is_valid_extern_assign() {
+            // potiential conflict with seq value internal used
+            panic!("assign value is not in a valid format");
+        }
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                return direct.assign(key, newval).await;
+            },
+            NodeType::Btree(btree) => {
+                return btree.assign(key, newval, None).await;
             },
         }
     }
