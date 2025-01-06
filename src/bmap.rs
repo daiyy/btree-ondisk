@@ -588,6 +588,9 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// **meta node:** use node to find target, key is unused.
     ///
+    /// explicit invoke of this function is not required,
+    /// propagation will be implicit invoked by [`BMap::insert`] and [`BMap::delete`].
+    ///
     /// # Errors
     ///
     /// * NotFound - key not found.
