@@ -114,7 +114,7 @@ impl<'a> MemoryFile<'a> {
 
 		for n in &dirty_meta_vec {
             let blk_ptr = self.seq;
-            self.bmap.assign(0, blk_ptr, Some(n.clone())).await?;
+            self.bmap.assign_meta_node(blk_ptr, n.clone()).await?;
             meta_nodes.push_back(blk_ptr);
             self.seq += 1;
         }
@@ -122,7 +122,7 @@ impl<'a> MemoryFile<'a> {
         let mut v = Vec::new();
         for blk_idx in self.data_blocks_dirty.iter() {
             let blk_ptr = self.seq;
-            self.bmap.assign(*blk_idx, blk_ptr.clone(), None).await?;
+            self.bmap.assign_data_node(*blk_idx, blk_ptr.clone()).await?;
             v.push((*blk_idx, blk_ptr));
             self.seq += 1;
         }
