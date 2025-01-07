@@ -133,7 +133,7 @@ impl<'a> MemoryFile<'a> {
 
 		for n in &dirty_meta_vec {
             let seq = meta_nodes.pop_front().expect("failed to get seq id");
-            self.loader.write(seq, n.as_ref().as_ref().as_ref());
+            self.loader.write(seq, n.as_slice());
         }
 
         for n in dirty_meta_vec {
