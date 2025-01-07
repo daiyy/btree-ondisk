@@ -20,9 +20,34 @@ use crate::DEFAULT_CACHE_UNLIMITED;
 
 pub(crate) type BtreeLevel = usize;
 #[cfg(feature = "rc")]
-pub type BtreeNodeRef<'a, K, V> = Rc<Box<BtreeNode<'a, K, V>>>;
+pub(crate) type BtreeNodeRef<'a, K, V> = Rc<Box<BtreeNode<'a, K, V>>>;
 #[cfg(feature = "arc")]
-pub type BtreeNodeRef<'a, K, V> = Arc<Box<BtreeNode<'a, K, V>>>;
+pub(crate) type BtreeNodeRef<'a, K, V> = Arc<Box<BtreeNode<'a, K, V>>>;
+
+#[derive(Clone)]
+pub struct BtreeNodeDirty<'a, K, V>(pub(crate) BtreeNodeRef<'a, K, V>);
+
+impl<'a, K, V> BtreeNodeDirty<'a, K, V>
+    where
+        K: Copy + fmt::Display + std::cmp::PartialOrd,
+        V: Copy + fmt::Display + NodeValue<V>,
+{
+    pub(crate) fn clone_node_ref(&self) -> BtreeNodeRef<'a, K, V> {
+        self.0.clone()
+    }
+
+    pub fn size(&self) -> usize {
+        self.0.as_ref().as_ref().as_ref().len()
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.0.as_ref().as_ref().as_ref()
+    }
+
+    pub fn clear_dirty(&self) {
+        self.0.clear_dirty()
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub enum BtreeMapOp {

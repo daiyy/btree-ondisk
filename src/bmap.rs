@@ -17,7 +17,7 @@ use crate::{NodeValue, BlockLoader};
 use crate::direct::DirectMap;
 use crate::btree::BtreeMap;
 use crate::node::{BtreeNode, DirectNode};
-use crate::btree::BtreeNodeRef;
+use crate::btree::{BtreeNodeRef, BtreeNodeDirty};
 
 #[derive(Default, Debug)]
 pub struct BMapStat {
@@ -459,13 +459,13 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     }
 
     /// Collect all dirty nodes into a Vec.
-    pub fn lookup_dirty(&self) -> Vec<BtreeNodeRef<'a, K, V>> {
+    pub fn lookup_dirty(&self) -> Vec<BtreeNodeDirty<'a, K, V>> {
         match &self.inner {
             NodeType::Direct(_) => {
                 return Vec::new();
             },
             NodeType::Btree(btree) => {
-                return btree.lookup_dirty();
+                return btree.lookup_dirty().into_iter().map(|n| BtreeNodeDirty(n)).collect();
             },
         }
     }
@@ -519,7 +519,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn assign(&self, key: K, newval: V, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+    pub async fn assign(&self, key: K, newval: V, node: Option<BtreeNodeDirty<'_, K, V>>) -> Result<()> {
         #[cfg(feature = "value-check")]
         if !newval.is_valid_extern_assign() {
             // potiential conflict with seq value internal used
@@ -530,7 +530,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
                 return direct.assign(key, newval).await;
             },
             NodeType::Btree(btree) => {
-                return btree.assign(key, newval, node).await;
+                return btree.assign(key, newval, node.map(|n| n.clone_node_ref())).await;
             },
         }
     }
@@ -542,7 +542,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn assign_meta_node(&self, newval: V, node: BtreeNodeRef<'_, K, V>) -> Result<()> {
+    pub async fn assign_meta_node(&self, newval: V, node: BtreeNodeDirty<'_, K, V>) -> Result<()> {
         #[cfg(feature = "value-check")]
         if !newval.is_valid_extern_assign() {
             // potiential conflict with seq value internal used
@@ -554,7 +554,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             },
             NodeType::Btree(btree) => {
                 // key is unused, so use 0
-                return btree.assign(0.into(), newval, Some(node)).await;
+                return btree.assign(0.into(), newval, Some(node.clone_node_ref())).await;
             },
         }
     }
