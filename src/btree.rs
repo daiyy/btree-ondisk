@@ -37,10 +37,12 @@ impl<'a, K, V> BtreeNodeDirty<'a, K, V>
     }
 
     pub fn size(&self) -> usize {
+        // rc/arc -> box -> inner slice -> len
         self.0.as_ref().as_ref().as_ref().len()
     }
 
     pub fn as_slice(&self) -> &[u8] {
+        // rc/arc -> box -> inner slice
         self.0.as_ref().as_ref().as_ref()
     }
 
