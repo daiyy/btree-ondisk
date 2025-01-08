@@ -354,6 +354,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     #[inline]
     pub(crate) fn set_cache_limit(&self, limit: usize) {
          self.cache_limit.store(limit, Ordering::SeqCst); 
+         self.evict();
     }
 
     #[inline]
