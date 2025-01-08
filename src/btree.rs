@@ -346,15 +346,15 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     #[cfg(feature = "rc")]
     #[inline]
     pub(crate) fn set_cache_limit(&self, limit: usize) {
-         *self.cache_limit.borrow_mut() = limit;
-         self.evict();
+        *self.cache_limit.borrow_mut() = limit;
+        self.evict();
     }
 
     #[cfg(feature = "arc")]
     #[inline]
     pub(crate) fn set_cache_limit(&self, limit: usize) {
-         self.cache_limit.store(limit, Ordering::SeqCst); 
-         self.evict();
+        self.cache_limit.store(limit, Ordering::SeqCst);
+        self.evict();
     }
 
     #[inline]
