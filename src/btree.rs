@@ -374,10 +374,8 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             #[cfg(not(feature = "sync-api"))]
             let more = self.meta_block_loader(val, node.as_mut()).await?;
             #[cfg(feature = "sync-api")]
-            let more = tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async {
-                    self.meta_block_loader(val, node.as_mut()).await
-                })
+            let more = futures::executor::block_on(async {
+                self.meta_block_loader(val, node.as_mut()).await
             })?;
             #[cfg(feature = "rc")]
             let n = Rc::new(Box::new(node));
