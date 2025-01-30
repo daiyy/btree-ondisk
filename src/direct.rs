@@ -209,7 +209,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         if val.is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        return Ok(val);
+        return Ok(*val);
     }
 
     #[maybe_async::maybe_async]
@@ -230,7 +230,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             }
             count += 1;
         }
-        return Ok((val, count));
+        return Ok((*val, count));
     }
 
     #[maybe_async::maybe_async]
@@ -256,7 +256,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         }
         let old_val = if !self.root.get_val(index).is_invalid() {
             // old val
-            Some(self.root.get_val(index))
+            Some(*self.root.get_val(index))
         } else {
             None
         };

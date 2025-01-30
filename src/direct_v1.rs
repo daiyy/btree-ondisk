@@ -75,7 +75,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
             return Err(Error::new(ErrorKind::InvalidData, ""));
         }
         let index = (*key).into() as usize;
-        let val = self.root.borrow().get_val(index);
+        let val = *self.root.borrow().get_val(index);
         if val.is_invalid() {
             return Err(Error::new(ErrorKind::InvalidData, ""));
         }
@@ -114,7 +114,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         if index > self.root.borrow().get_capacity() - 1 || level != 1 {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        let val = self.root.borrow().get_val(index);
+        let val = *self.root.borrow().get_val(index);
         if val.is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
@@ -137,7 +137,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             }
             count += 1;
         }
-        let val = self.root.borrow().get_val(index + count);
+        let val = *self.root.borrow().get_val(index + count);
         return Ok((val, count));
     }
 
@@ -162,7 +162,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         }
         let old_val = if !self.root.borrow().get_val(index).is_invalid() {
             // old val
-            Some(self.root.borrow().get_val(index))
+            Some(*self.root.borrow().get_val(index))
         } else {
             None
         };

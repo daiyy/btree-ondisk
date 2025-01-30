@@ -96,9 +96,9 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         None
     }
 
-    pub fn new_with_id(size: usize, v: V) -> Option<Self> {
+    pub fn new_with_id(size: usize, v: &V) -> Option<Self> {
         if let Some(node) = Self::new(size) {
-            node.set_id(v);
+            node.set_id(*v);
             return Some(node);
         }
         None
@@ -190,8 +190,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn get_key(&self, index: usize) -> K {
-        self.keymap[index]
+    pub fn get_key(&self, index: usize) -> &K {
+        &self.keymap[index]
     }
 
     #[inline]
@@ -206,8 +206,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn get_val(&self, index: usize) -> V {
-        self.valmap[index]
+    pub fn get_val(&self, index: usize) -> &V {
+        &self.valmap[index]
     }
 
     #[inline]
@@ -419,9 +419,9 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         while low <= high {
             index = (low + high) / 2;
             let nkey = self.get_key(index as usize);
-            if &nkey == key {
+            if nkey == key {
                 return (true, index as usize);
-            } else if &nkey < key {
+            } else if nkey < key {
                 low = index + 1;
                 s = false;
             } else {
@@ -470,8 +470,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     pub fn delete(&self, index: usize, key: &mut K, val: &mut V) {
         let mut nchild = self.get_nchild();
 
-        *key = self.get_key(index);
-        *val = self.get_val(index);
+        *key = *self.get_key(index);
+        *val = *self.get_val(index);
 
         if index < nchild - 1 {
             unsafe {
@@ -628,8 +628,8 @@ impl<'a, V> DirectNode<'a, V>
     }
 
     #[inline]
-    pub fn get_val(&self, index: usize) -> V {
-        self.valmap[index]
+    pub fn get_val(&self, index: usize) -> &V {
+        &self.valmap[index]
     }
 
     #[inline]

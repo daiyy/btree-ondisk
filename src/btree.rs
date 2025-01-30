@@ -363,32 +363,32 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     #[maybe_async::maybe_async]
-    pub(crate) async fn get_from_nodes(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
+    pub(crate) async fn get_from_nodes(&self, val: &V) -> Result<BtreeNodeRef<'a, K, V>> {
         let list = self.nodes.borrow();
-        if let Some(node) = list.get(&val) {
+        if let Some(node) = list.get(val) {
             return Ok(node.clone());
         }
         drop(list);
 
         if let Some(node) = BtreeNode::<K, V>::new_with_id(self.meta_block_size, val) {
             #[cfg(not(feature = "sync-api"))]
-            let more = self.meta_block_loader(val, node.as_mut()).await?;
+            let more = self.meta_block_loader(*val, node.as_mut()).await?;
             #[cfg(feature = "sync-api")]
             let more = futures::executor::block_on(async {
-                self.meta_block_loader(val, node.as_mut()).await
+                self.meta_block_loader(*val, node.as_mut()).await
             })?;
             #[cfg(feature = "rc")]
             let n = Rc::new(Box::new(node));
             #[cfg(feature = "arc")]
             let n = Arc::new(Box::new(node));
             let mut list = self.nodes.borrow_mut();
-            list.insert(val, n.clone());
+            list.insert(*val, n.clone());
             drop(list);
 
             // if we have more to load
             for (v, data) in more.into_iter() {
                 assert!(data.len() == self.meta_block_size);
-                if val == v {
+                if *val == v {
                     // in case we go duplicated meta block
                     // skip it
                     continue;
@@ -410,14 +410,14 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         return Err(Error::new(ErrorKind::OutOfMemory, ""));
     }
 
-    pub(crate) fn get_new_node(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
+    pub(crate) fn get_new_node(&self, val: &V) -> Result<BtreeNodeRef<'a, K, V>> {
         let mut list = self.nodes.borrow_mut();
         if let Some(node) = BtreeNode::<K, V>::new_with_id(self.meta_block_size, val) {
             #[cfg(feature = "rc")]
             let n = Rc::new(Box::new(node));
             #[cfg(feature = "arc")]
             let n = Arc::new(Box::new(node));
-            if let Some(_oldnode) = list.insert(val, n.clone()) {
+            if let Some(_oldnode) = list.insert(*val, n.clone()) {
                 panic!("value {} is already in nodes list", val);
             }
             return Ok(n);
@@ -461,14 +461,14 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         let mut value = if index > root.get_capacity() - 1 {
             V::invalid_value()
         } else {
-            root.get_val(index)
+            *root.get_val(index)
         };
 
         path.set_index(level, index);
 
         level -= 1;
         while level >= minlevel {
-            let node = self.get_from_nodes(value).await?;
+            let node = self.get_from_nodes(&value).await?;
             if !found {
                 (found, index) = node.lookup(key);
             } else {
@@ -476,7 +476,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             }
 
             if index < node.get_capacity() {
-                value = node.get_val(index);
+                value = *node.get_val(index);
             } else {
                 if found || level != BTREE_NODE_LEVEL_MIN {
                     warn!("index {} - level {} - found {}", index, level, found);
@@ -519,7 +519,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             level -= 1;
         }
         let key = node.get_key(index);
-        Ok(key)
+        Ok(*key)
     }
 
     #[maybe_async::maybe_async]
@@ -570,7 +570,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             // both left and right sibling has no free slots
             // prepare a new node and split myself
             let seq = self.prepare_seq(path, level);
-            let node = self.get_new_node(seq)?;
+            let node = self.get_new_node(&seq)?;
             node.init(0, level, 0);
             path.set_sib_node(level, node);
             path.set_op(level, BtreeMapOp::Split);
@@ -587,7 +587,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         // grow
         let seq = self.prepare_seq(path, level);
-        let node = self.get_new_node(seq)?;
+        let node = self.get_new_node(&seq)?;
         node.init(0, level, 0);
         path.set_sib_node(level, node);
         path.set_op(level, BtreeMapOp::Grow);
@@ -615,7 +615,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         let mut dindex = path.get_index(level);
         for _ in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
             let node = path.get_nonroot_node(level);
-            path.set_old_seq(level, node.get_val(dindex));
+            path.set_old_seq(level, *node.get_val(dindex));
 
             if node.is_overflowing() {
                 path.set_op(level, BtreeMapOp::Delete);
@@ -665,7 +665,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
                     path.set_op(level, BtreeMapOp::Nop);
                     // shrink root child
                     let root = self.get_root_node();
-                    path.set_old_seq(level, root.get_val(dindex));
+                    path.set_old_seq(level, *root.get_val(dindex));
                     return Ok(level);
                 } else {
                     path.set_op(level, BtreeMapOp::Delete);
@@ -679,7 +679,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         // shrink root child
         let root = self.get_root_node();
-        path.set_old_seq(level, root.get_val(dindex));
+        path.set_old_seq(level, *root.get_val(dindex));
         Ok(level)
     }
 
@@ -732,7 +732,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             };
             let index = path.get_index(level) + next_adj;
             if index < node.get_nchild() {
-                return Ok(node.get_key(index));
+                return Ok(*node.get_key(index));
             }
             next_adj = 1;
         }
@@ -811,7 +811,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             // if this is meta node, we use node key as search key to search in parent node
             let node_key = node.get_key(0);
             let node_level = node.get_level();
-            (node_key, node_level, true)
+            (*node_key, node_level, true)
         } else {
             (*key, BTREE_NODE_LEVEL_DATA, false)
         };
@@ -851,7 +851,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             // if this is meta node, we use node key as search key to search in parent node
             let node_key = node.get_key(0);
             let node_level = node.get_level();
-            (node_key, node_level)
+            (*node_key, node_level)
         } else {
             (*key, BTREE_NODE_LEVEL_DATA)
         };
@@ -886,7 +886,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         let val = self.do_lookup(&path, key, level + 1).await?;
 
-        let node = self.get_from_nodes(val).await?;
+        let node = self.get_from_nodes(&val).await?;
 
         node.mark_dirty();
         self.set_dirty();
@@ -972,9 +972,9 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         // convert all to u64 to compare
         let nchild = node.get_nchild();
-        let maxkey = node.get_key(nchild - 1).into();
+        let maxkey = (*node.get_key(nchild - 1)).into();
         let next_maxkey = if nchild > 1 {
-            node.get_key(nchild - 2).into()
+            (*node.get_key(nchild - 2)).into()
         } else {
             0
         };
@@ -985,7 +985,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             for i in 0..std::cmp::min(root_capacity, nchild) {
                 let key = node.get_key(i);
                 let val = node.get_val(i);
-                v.push((key, val));
+                v.push((*key, *val));
             }
             return Ok(true);
         }
@@ -1045,7 +1045,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
         self.op_insert(path, level, key, val);
 
-        *key = child.get_key(0);
+        *key = *child.get_key(0);
         *val = path.get_new_seq(level);
     }
 
@@ -1078,7 +1078,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
             right.insert(idx, key, val);
 
-            *key = right.get_key(0);
+            *key = *right.get_key(0);
             *val = path.get_new_seq(level);
 
             let sib_node = path.get_sib_node(level);
@@ -1087,7 +1087,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         } else {
             self.op_insert(path, level, key, val);
 
-            *key = right.get_key(0);
+            *key = *right.get_key(0);
             *val = path.get_new_seq(level);
 
             path.set_sib_node_none(level);
@@ -1366,7 +1366,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
                 }
 
                 let mut _key = *key; _key += count as u64;
-                if node.get_key(index) != _key {
+                if node.get_key(index) != &_key {
                     // early break at first non continue key
                     return Ok((value, count))
                 }
@@ -1384,7 +1384,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
             let p_node = self.get_node(&path, level + 1);
             let p_index = path.get_index(level + 1) + 1;
             let mut _key = *key; _key += count as u64;
-            if p_index >= p_node.get_nchild() || p_node.get_key(p_index) != _key {
+            if p_index >= p_node.get_nchild() || p_node.get_key(p_index) != &_key {
                 return Ok((value, count));
             }
             let v = p_node.get_val(p_index);
