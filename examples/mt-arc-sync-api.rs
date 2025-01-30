@@ -43,7 +43,7 @@ async fn single() {
     loop {
         let start = Instant::now();
         for i in 0..iter as u64 {
-            let _ = file.bmap.lookup(i);
+            let _ = file.bmap.lookup(&i);
         }
         let avg = start.elapsed() / iter;
         println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "LOOKUP", start.elapsed(), avg);
@@ -57,14 +57,14 @@ async fn single() {
 
         let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
-            let _ = file.bmap.assign(i, i | VALID_EXTERNAL_ASSIGN_MASK, None);
+            let _ = file.bmap.assign(&i, i | VALID_EXTERNAL_ASSIGN_MASK, None);
         }
         let avg = start.elapsed() / iter;
         println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "ASSIGN", start.elapsed(), avg);
 
         let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
-            let _ = file.bmap.propagate(i, None);
+            let _ = file.bmap.propagate(&i, None);
         }
         let avg = start.elapsed() / iter;
         println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "PROPAGATE", start.elapsed(), avg);
@@ -103,7 +103,7 @@ async fn multi() {
             let start = Instant::now();
             for i in 0..iter as u64 {
                 let file = clone.lock().await;
-                let _ = file.bmap.lookup(i);
+                let _ = file.bmap.lookup(&i);
             }
             let avg = start.elapsed() / iter as u32;
             avg
@@ -149,7 +149,7 @@ async fn multi() {
             let end = blk_idx_start + ((x + 1) * iter) as u64;
             for i in begin..end as u64 {
                 let file = clone.lock().await;
-                let _ = file.bmap.assign(i, i | VALID_EXTERNAL_ASSIGN_MASK, None);
+                let _ = file.bmap.assign(&i, i | VALID_EXTERNAL_ASSIGN_MASK, None);
             }
             let avg = start.elapsed() / iter as u32;
             avg
@@ -172,7 +172,7 @@ async fn multi() {
             let end = blk_idx_start + ((x + 1) * iter) as u64;
             for i in begin..end as u64 {
                 let file = clone.lock().await;
-                let _ = file.bmap.propagate(i, None);
+                let _ = file.bmap.propagate(&i, None);
             }
             let avg = start.elapsed() / iter as u32;
             avg
@@ -221,7 +221,7 @@ async fn multi_atomic() {
                 let i = begin.fetch_add(1, Ordering::SeqCst);
                 if i >= end { break; }
                 let file = clone.lock().await;
-                let _ = file.bmap.lookup(i);
+                let _ = file.bmap.lookup(&i);
             }
             let avg = start.elapsed() / iter as u32;
             avg
@@ -275,7 +275,7 @@ async fn multi_atomic() {
                 let i = begin.fetch_add(1, Ordering::SeqCst);
                 if i >= end { break; }
                 let file = clone.lock().await;
-                let _ = file.bmap.assign(i, i | VALID_EXTERNAL_ASSIGN_MASK, None);
+                let _ = file.bmap.assign(&i, i | VALID_EXTERNAL_ASSIGN_MASK, None);
             }
             let avg = start.elapsed() / iter as u32;
             avg
@@ -302,7 +302,7 @@ async fn multi_atomic() {
                 let i = begin.fetch_add(1, Ordering::SeqCst);
                 if i >= end { break; }
                 let file = clone.lock().await;
-                let _ = file.bmap.propagate(i, None);
+                let _ = file.bmap.propagate(&i, None);
             }
             let avg = start.elapsed() / iter as u32;
             avg

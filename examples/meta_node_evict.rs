@@ -34,7 +34,7 @@ impl<'a> MemoryFile<'a> {
     #[maybe_async::maybe_async]
     async fn read(&self, off: usize) -> Result<()> {
         let blk_idx = (off / self.data_block_size) as u64;
-        let _ = self.bmap.lookup(blk_idx).await?;
+        let _ = self.bmap.lookup(&blk_idx).await?;
         Ok(())
     }
 
@@ -63,14 +63,14 @@ impl<'a> MemoryFile<'a> {
 
 		for n in &dirty_meta_vec {
             let blk_ptr = self.seq;
-            self.bmap.assign(0, blk_ptr, Some(n.clone())).await?;
+            self.bmap.assign(&0, blk_ptr, Some(n.clone())).await?;
             meta_nodes.push_back(blk_ptr);
             self.seq += 1;
         }
 
         for blk_idx in self.data_blocks_dirty.iter() {
             let blk_ptr = self.seq;
-            self.bmap.assign(*blk_idx, blk_ptr, None).await?;
+            self.bmap.assign(&blk_idx, blk_ptr, None).await?;
             self.seq += 1;
         }
 

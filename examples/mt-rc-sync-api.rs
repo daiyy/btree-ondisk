@@ -21,7 +21,7 @@ async fn main() {
     loop {
         let start = Instant::now();
         for i in 0..iter as u64 {
-            let _ = file.bmap.lookup(i);
+            let _ = file.bmap.lookup(&i);
         }
         let avg = start.elapsed() / iter;
         println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "LOOKUP", start.elapsed(), avg);
@@ -35,14 +35,14 @@ async fn main() {
 
         let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
-            let _ = file.bmap.assign(i, i | VALID_EXTERNAL_ASSIGN_MASK, None);
+            let _ = file.bmap.assign(&i, i | VALID_EXTERNAL_ASSIGN_MASK, None);
         }
         let avg = start.elapsed() / iter;
         println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "ASSIGN", start.elapsed(), avg);
 
         let start = Instant::now();
         for i in blk_idx_start..blk_idx_start + iter as u64 {
-            let _ = file.bmap.propagate(i, None);
+            let _ = file.bmap.propagate(&i, None);
         }
         let avg = start.elapsed() / iter;
         println!("{} iters of {:>10} total time {:>12?}, avg latency {:>10?}", iter, "PROPAGATE", start.elapsed(), avg);

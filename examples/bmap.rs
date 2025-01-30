@@ -75,7 +75,7 @@ async fn main() {
     let trunc_to = 3;
     println!("Truncating bmap to {} ...", trunc_to);
     let now = Instant::now();
-    let _ = bmap.truncate(trunc_to).await;
+    let _ = bmap.truncate(&trunc_to).await;
     let stat = bmap.get_stat();
     let total_bytes = stat.meta_block_size * (stat.nodes_total - 1);
     println!("  time cost [{:?}], memory usage: [{}]", now.elapsed(), human_bytes(total_bytes as f64));
@@ -119,7 +119,7 @@ async fn main() {
     let trunc_to = 3;
     println!("Truncating bmap to {} ...", trunc_to);
     let now = Instant::now();
-    let _ = bmap.truncate(trunc_to).await;
+    let _ = bmap.truncate(&trunc_to).await;
     let stat = bmap.get_stat();
     let total_bytes = stat.meta_block_size * (stat.nodes_total - 1);
     println!("  time cost [{:?}], memory usage: [{}]", now.elapsed(), human_bytes(total_bytes as f64));
