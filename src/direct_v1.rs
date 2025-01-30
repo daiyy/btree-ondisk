@@ -109,8 +109,8 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         K: From<V> + Into<u64>,
         V: From<K> + NodeValue<V>
 {
-    async fn lookup(&self, key: K, level: usize) -> Result<V> {
-        let index = key.into() as usize;
+    async fn lookup(&self, key: &K, level: usize) -> Result<V> {
+        let index = (*key).into() as usize;
         if index > self.root.borrow().get_capacity() - 1 || level != 1 {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
@@ -121,8 +121,8 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         return Ok(val);
     }
 
-    async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
-        let index = key.into() as usize;
+    async fn lookup_contig(&self, key: &K, maxblocks: usize) -> Result<(V, usize)> {
+        let index = (*key).into() as usize;
         if index > self.root.borrow().get_capacity() - 1 {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }

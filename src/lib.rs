@@ -36,8 +36,8 @@ pub trait VMap<K, V>
         K: From<V>,
         V: From<K>
 {
-    async fn lookup(&self, key: K, level: usize) -> Result<V>;
-    async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)>;
+    async fn lookup(&self, key: &K, level: usize) -> Result<V>;
+    async fn lookup_contig(&self, key: &K, maxblocks: usize) -> Result<(V, usize)>;
     async fn insert(&self, key: K, val: V) -> Result<()>;
     async fn insert_or_update(&self, key: K, val: V) -> Result<Option<V>>;
     async fn delete(&self, key: &K) -> Result<()>;

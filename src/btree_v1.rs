@@ -1062,16 +1062,16 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
         V: From<K> + NodeValue<V>,
         L: BlockLoader<V>,
 {
-    async fn lookup(&self, key: K, level: usize) -> Result<V> {
+    async fn lookup(&self, key: &K, level: usize) -> Result<V> {
         let path = BtreePath::new();
-        let val = self.do_lookup(&path, &key, level).await?;
+        let val = self.do_lookup(&path, key, level).await?;
         Ok(val)
     }
 
-    async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
+    async fn lookup_contig(&self, key: &K, maxblocks: usize) -> Result<(V, usize)> {
         let level = BTREE_NODE_LEVEL_MIN;
         let path = BtreePath::new();
-        let value = self.do_lookup(&path, &key, level).await?;
+        let value = self.do_lookup(&path, key, level).await?;
 
         if maxblocks == 1 {
             return Ok((value, 1));
@@ -1087,7 +1087,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
                     return Ok((value, count))
                 }
 
-                let mut _key = key; _key += count as u64;
+                let mut _key = *key; _key += count as u64;
                 if r!(node).get_key(index) != _key {
                     // early break at first non continue key
                     return Ok((value, count))
@@ -1105,7 +1105,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
             // get parent node
             let p_node = self.get_node(&path, level + 1);
             let p_index = path.get_index(level + 1) + 1;
-            let mut _key = key; _key += count as u64;
+            let mut _key = *key; _key += count as u64;
             if p_index >= r!(p_node).get_nchild() || r!(p_node).get_key(p_index) != _key {
                 return Ok((value, count));
             }

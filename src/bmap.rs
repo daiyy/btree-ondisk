@@ -412,7 +412,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn lookup_at_level(&self, key: K, level: usize) -> Result<V> {
+    pub async fn lookup_at_level(&self, key: &K, level: usize) -> Result<V> {
         match &self.inner {
             NodeType::Direct(direct) => {
                 return direct.lookup(key, level).await;
@@ -430,7 +430,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn lookup(&self, key: K) -> Result<V> {
+    pub async fn lookup(&self, key: &K) -> Result<V> {
         self.lookup_at_level(key, 1).await
     }
 
@@ -447,7 +447,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn lookup_contig(&self, key: K, maxblocks: usize) -> Result<(V, usize)> {
+    pub async fn lookup_contig(&self, key: &K, maxblocks: usize) -> Result<(V, usize)> {
         match &self.inner {
             NodeType::Direct(direct) => {
                 return direct.lookup_contig(key, maxblocks).await;
