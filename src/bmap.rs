@@ -614,7 +614,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn mark(&self, key: K, level: usize) -> Result<()> {
+    pub async fn mark(&self, key: &K, level: usize) -> Result<()> {
         match &self.inner {
             NodeType::Direct(_) => {
                 return Ok(());

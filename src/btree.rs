@@ -881,10 +881,10 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     #[maybe_async::maybe_async]
-    pub(crate) async fn mark(&self, key: K, level: usize) -> Result<()> {
+    pub(crate) async fn mark(&self, key: &K, level: usize) -> Result<()> {
         let path = BtreePath::new();
 
-        let val = self.do_lookup(&path, &key, level + 1).await?;
+        let val = self.do_lookup(&path, key, level + 1).await?;
 
         let node = self.get_from_nodes(val).await?;
 
