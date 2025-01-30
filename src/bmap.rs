@@ -739,6 +739,19 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     pub fn nonleafnode_iter<'b>(&'b self) -> NonLeafNodeIter<'a, 'b, K, V, L> {
         NonLeafNodeIter::new(self)
     }
+
+    /// Release bmap and get back block loader
+    pub fn get_block_loader(&self) -> L {
+        match &self.inner {
+            NodeType::Direct(_) => {
+                assert!(self.block_loader.is_some());
+                return self.block_loader.as_ref().unwrap().clone();
+            },
+            NodeType::Btree(btree) => {
+                return btree.block_loader.clone();
+            },
+        }
+    }
 }
 
 pub struct NonLeafNodeIter<'a, 'b, K, V, L: BlockLoader<V>> {
