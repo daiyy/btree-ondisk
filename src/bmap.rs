@@ -626,13 +626,13 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     }
 
     #[maybe_async::maybe_async]
-    async fn do_truncate(&mut self, key: K) -> Result<()> {
+    async fn do_truncate(&mut self, key: &K) -> Result<()> {
         let mut last_key = self.last_key().await?;
-        if key > last_key {
+        if key > &last_key {
             return Ok(());
         }
 
-        while key <= last_key {
+        while key <= &last_key {
             let _ = self.do_delete(&last_key).await?;
             match self.last_key().await {
                 Ok(key) => {
@@ -655,7 +655,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn truncate(&mut self, key: K) -> Result<()> {
+    pub async fn truncate(&mut self, key: &K) -> Result<()> {
         self.do_truncate(key).await
     }
 
