@@ -172,8 +172,8 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         Ok(old_val)
     }
 
-    async fn delete(&self, key: K) -> Result<()> {
-        let index = key.into() as usize;
+    async fn delete(&self, key: &K) -> Result<()> {
+        let index = (*key).into() as usize;
         if index > self.root.borrow().get_capacity() ||
                 self.root.borrow().get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));

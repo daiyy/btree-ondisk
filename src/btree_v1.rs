@@ -671,7 +671,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     // for delete
-    pub(crate) async fn delete_check_and_gather(&self, key: K, v: &mut Vec<(K, V)>) -> Result<bool> {
+    pub(crate) async fn delete_check_and_gather(&self, key: &K, v: &mut Vec<(K, V)>) -> Result<bool> {
         let node;
         let root = self.get_root_node();
         let root_capacity = r!(root).get_capacity();
@@ -704,7 +704,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         };
 
         // gather data to output vec
-        if (maxkey == key.into()) && (next_maxkey < root_capacity as u64) {
+        if (maxkey == (*key).into()) && (next_maxkey < root_capacity as u64) {
             // because we shrink to root node, we copy only size min than root capacity
             for i in 0..std::cmp::min(root_capacity, nchild) {
                 let key = r!(node).get_key(i);
@@ -1166,9 +1166,9 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
         Ok(None)
     }
 
-    async fn delete(&self, key: K) -> Result<()> {
+    async fn delete(&self, key: &K) -> Result<()> {
         let path = BtreePath::new();
-        match self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN).await {
+        match self.do_lookup(&path, key, BTREE_NODE_LEVEL_MIN).await {
             Ok(_) => {}, // do nothing if found
             Err(e) => { return Err(e); }, // return any errors
         }

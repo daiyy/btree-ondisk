@@ -172,7 +172,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     }
 
     #[maybe_async::maybe_async]
-    async fn convert_to_direct(&mut self, _key: K, input: &Vec<(K, V)>,
+    async fn convert_to_direct(&mut self, _key: &K, input: &Vec<(K, V)>,
             root_node_size: usize, last_seq: V, limit: usize, block_loader: L) -> Result<()> {
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
@@ -368,7 +368,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     }
 
     #[maybe_async::maybe_async]
-    async fn do_delete(&mut self, key: K) -> Result<()> {
+    async fn do_delete(&mut self, key: &K) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
                 return direct.delete(key).await;
@@ -378,7 +378,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
                 if btree.delete_check_and_gather(key, &mut v).await? {
                     let _ = btree.delete(key).await?;
                     // re-visit vec we got, remove above last key we need to delete
-                    v.retain(|(_k, _)| _k != &key);
+                    v.retain(|(_k, _)| _k != key);
                     #[cfg(feature = "rc")]
                     let _ = self.convert_to_direct(key, &v,
                         btree.data.len(), btree.last_seq.take(), btree.get_cache_limit(), btree.block_loader.clone()).await?;
@@ -401,7 +401,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn delete(&mut self, key: K) -> Result<()> {
+    pub async fn delete(&mut self, key: &K) -> Result<()> {
         self.do_delete(key).await
     }
 
@@ -633,7 +633,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
 
         while key <= last_key {
-            let _ = self.do_delete(last_key).await?;
+            let _ = self.do_delete(&last_key).await?;
             match self.last_key().await {
                 Ok(key) => {
                     last_key = key;
