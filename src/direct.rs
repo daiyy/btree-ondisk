@@ -68,8 +68,8 @@ impl<'a, K, V> DirectMap<'a, K, V>
     }
 
     #[inline]
-    pub(crate) fn is_key_exceed(&self, key: K) -> bool {
-        let index = key.into() as usize;
+    pub(crate) fn is_key_exceed(&self, key: &K) -> bool {
+        let index = (*key).into() as usize;
         // if key's index is exceeded
         index >= self.root.get_capacity()
     }
@@ -146,11 +146,11 @@ impl<'a, K, V> DirectMap<'a, K, V>
     }
 
     #[maybe_async::maybe_async]
-    pub(crate) async fn assign(&self, key: K, newval: V) -> Result<()> {
+    pub(crate) async fn assign(&self, key: &K, newval: V) -> Result<()> {
         if self.is_key_exceed(key) {
             return Err(Error::new(ErrorKind::InvalidData, ""));
         }
-        let index = key.into() as usize;
+        let index = (*key).into() as usize;
         let val = self.root.get_val(index);
         if val.is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));

@@ -302,7 +302,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     async fn do_try_insert(&mut self, key: K, val: V) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                if direct.is_key_exceed(key) {
+                if direct.is_key_exceed(&key) {
                     // convert and insert
                     let data = direct.data.clone();
                     #[cfg(feature = "rc")]
@@ -336,7 +336,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     async fn do_insert_or_update(&mut self, key: K, val: V) -> Result<Option<V>> {
         match &self.inner {
             NodeType::Direct(direct) => {
-                if direct.is_key_exceed(key) {
+                if direct.is_key_exceed(&key) {
                     // convert and insert
                     let data = direct.data.clone();
                     #[cfg(feature = "rc")]
@@ -519,7 +519,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn assign(&self, key: K, newval: V, node: Option<BtreeNodeDirty<'_, K, V>>) -> Result<()> {
+    pub async fn assign(&self, key: &K, newval: V, node: Option<BtreeNodeDirty<'_, K, V>>) -> Result<()> {
         #[cfg(feature = "value-check")]
         if !newval.is_valid_extern_assign() {
             // potiential conflict with seq value internal used
@@ -554,7 +554,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             },
             NodeType::Btree(btree) => {
                 // key is unused, so use 0
-                return btree.assign(0.into(), newval, Some(node.clone_node_ref())).await;
+                let zero_key = 0.into();
+                return btree.assign(&zero_key, newval, Some(node.clone_node_ref())).await;
             },
         }
     }
@@ -566,7 +567,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn assign_data_node(&self, key: K, newval: V) -> Result<()> {
+    pub async fn assign_data_node(&self, key: &K, newval: V) -> Result<()> {
         #[cfg(feature = "value-check")]
         if !newval.is_valid_extern_assign() {
             // potiential conflict with seq value internal used

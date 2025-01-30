@@ -584,7 +584,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         v
     }
 
-    pub(crate) async fn assign(&self, key: K, newval: V, meta_node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+    pub(crate) async fn assign(&self, key: &K, newval: V, meta_node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
 
         let (search_key, level, is_meta) = if let Some(node) = meta_node {
             // if this is meta node, we use node key as search key to search in parent node
@@ -592,7 +592,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             let node_level = r!(node).get_level();
             (node_key, node_level, true)
         } else {
-            (key, BTREE_NODE_LEVEL_DATA, false)
+            (*key, BTREE_NODE_LEVEL_DATA, false)
         };
         debug!("assign - key: {key}, newval: {newval}, is_meta: {is_meta}");
         debug!("search at parent level: {}, search_key: {search_key}", level + 1);
