@@ -477,7 +477,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - no valid entry found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn seek_key(&self, start: K) -> Result<K> {
+    pub async fn seek_key(&self, start: &K) -> Result<K> {
         match &self.inner {
             NodeType::Direct(direct) => {
                 return direct.seek_key(start).await;

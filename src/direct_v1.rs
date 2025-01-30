@@ -182,9 +182,9 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         Ok(())
     }
 
-    async fn seek_key(&self, start: K) -> Result<K> {
-        let mut key = start;
-        let start_idx = start.into() as usize;
+    async fn seek_key(&self, start: &K) -> Result<K> {
+        let mut key = *start;
+        let start_idx = (*start).into() as usize;
         for index in start_idx..self.root.borrow().get_capacity() {
             if !self.root.borrow().get_val(index).is_invalid() {
                 return Ok(key);

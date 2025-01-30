@@ -1466,12 +1466,12 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
     }
 
     #[maybe_async::maybe_async]
-    async fn seek_key(&self, start: K) -> Result<K> {
+    async fn seek_key(&self, start: &K) -> Result<K> {
         let path = BtreePath::new();
-        let res = self.do_lookup(&path, &start, BTREE_NODE_LEVEL_MIN).await;
+        let res = self.do_lookup(&path, start, BTREE_NODE_LEVEL_MIN).await;
         match res {
             Ok(_) => {
-                return Ok(start);
+                return Ok(*start);
             },
             Err(e) => {
                 if e.kind() == ErrorKind::NotFound {
