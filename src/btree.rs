@@ -845,7 +845,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     #[maybe_async::maybe_async]
-    pub(crate) async fn propagate(&self, key: K, meta_node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+    pub(crate) async fn propagate(&self, key: &K, meta_node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
 
         let (search_key, level) = if let Some(node) = meta_node {
             // if this is meta node, we use node key as search key to search in parent node
@@ -853,7 +853,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             let node_level = node.get_level();
             (node_key, node_level)
         } else {
-            (key, BTREE_NODE_LEVEL_DATA)
+            (*key, BTREE_NODE_LEVEL_DATA)
         };
         debug!("propagate - key: {key}, search at parent level: {}, search_key: {search_key}", level + 1);
 

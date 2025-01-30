@@ -596,7 +596,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn propagate(&self, key: K, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+    pub async fn propagate(&self, key: &K, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
                 return direct.propagate(key).await;

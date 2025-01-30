@@ -160,7 +160,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
     }
 
     #[maybe_async::maybe_async]
-    pub(crate) async fn propagate(&self, _: K) -> Result<()> {
+    pub(crate) async fn propagate(&self, _: &K) -> Result<()> {
         // do nothing for direct node
         Ok(())
     }
