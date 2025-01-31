@@ -26,6 +26,7 @@ rc = []
 value-check = []
 arc = ["atomic_refcell"]
 sync-api = ["maybe-async/is_sync"]
+mt = []
 
 [[example]]
 name = "mt-rc"
