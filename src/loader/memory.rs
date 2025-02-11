@@ -33,7 +33,8 @@ impl<V: Send + Sync + Eq + std::hash::Hash + std::fmt::Display> BlockLoader<V> f
             buf.copy_from_slice(data);
             return Ok(Vec::new());
         }
-        return Err(Error::new(ErrorKind::NotFound, "requested key {v} not exists"));
+        let msg = format!("requested key {v} not exists");
+        return Err(Error::new(ErrorKind::NotFound, msg));
     }
 
     fn from_new_path(self, _: &str) -> Self {
