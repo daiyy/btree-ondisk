@@ -274,7 +274,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         }
     }
 
-    /// Set map dirty flag.
+    /// Test map dirty flag.
     pub fn dirty(&self) -> bool {
         match &self.inner {
             NodeType::Direct(direct) => {
