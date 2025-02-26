@@ -27,7 +27,7 @@ impl<V: Send + Sync + Eq + std::hash::Hash + std::fmt::Display> BlockLoader<V> f
     where
         u64: From<V>,
 {
-    async fn read(&self, v: &V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
+    async fn read(&self, v: &V, buf: &mut [u8], _user_data: u32) -> Result<Vec<(V, Vec<u8>)>> {
         assert!(buf.len() == self.meta_node_size);
         if let Some(data) =  self.inner.borrow().get(&v) {
             buf.copy_from_slice(data);

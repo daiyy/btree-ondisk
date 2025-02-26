@@ -232,7 +232,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
 
     #[inline]
     async fn meta_block_loader(&self, v: &V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
-        self.block_loader.read(v, buf).await
+        self.block_loader.read(v, buf, 0).await
     }
 
     pub(crate) async fn get_from_nodes(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {

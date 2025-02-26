@@ -57,9 +57,9 @@ pub trait NodeValue<V> {
 pub trait BlockLoader<V> {
     // return: potentially more meta blocks in vec
     #[cfg(feature = "mt")]
-    fn read(&self, v: &V, buf: &mut [u8]) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>> + Send;
+    fn read(&self, v: &V, buf: &mut [u8], user_data: u32) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>> + Send;
     #[cfg(not(feature = "mt"))]
-    fn read(&self, v: &V, buf: &mut [u8]) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>>;
+    fn read(&self, v: &V, buf: &mut [u8], user_data: u32) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>>;
     fn from_new_path(self, new_path: &str) -> Self;
 }
 
@@ -80,9 +80,10 @@ impl<V> NodeValue<V> for u64
 }
 
 impl<V: Send> BlockLoader<V> for u64 {
-    async fn read(&self, v: &V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
+    async fn read(&self, v: &V, buf: &mut [u8], user_data: u32) -> Result<Vec<(V, Vec<u8>)>> {
         let _ = v;
         let _ = buf;
+        let _ = user_data;
         Ok(Vec::new())
     }
 
