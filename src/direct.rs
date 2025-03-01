@@ -156,6 +156,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
         self.root.set_val(index, &newval);
+        self.set_dirty();
         Ok(())
     }
 
@@ -242,9 +243,9 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         if !self.root.get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::AlreadyExists, ""));
         }
-        self.set_dirty();
         let index = key.into() as usize;
         self.root.set_val(index, &val);
+        self.set_dirty();
         Ok(())
     }
 
@@ -260,9 +261,9 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         } else {
             None
         };
-        self.set_dirty();
         let index = key.into() as usize;
         self.root.set_val(index, &val);
+        self.set_dirty();
         Ok(old_val)
     }
 
@@ -274,6 +275,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
         let _ = self.root.set_val(index, &V::invalid_value());
+        self.set_dirty();
         Ok(())
     }
 
