@@ -1,6 +1,6 @@
 [package]
 name = "btree-ondisk"
-version = "0.10.1"
+version = "0.10.2"
 edition = "2021"
 description = "A Rust implementation of BTree structure on persistent storage in userspace."
 authors = ["Dai Yiyang"]
