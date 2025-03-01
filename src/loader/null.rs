@@ -6,7 +6,7 @@ use crate::BlockLoader;
 pub struct NullBlockLoader;
 
 impl<V: Send> BlockLoader<V> for NullBlockLoader {
-    async fn read(&self, _v: &V, _buf: &mut [u8], _user_data: u32) -> Result<Vec<(V, Vec<u8>)>> {
+    async fn read(&self, _v: V, _buf: &mut [u8], _user_data: u32) -> Result<Vec<(V, Vec<u8>)>> {
         todo!()
     }
 

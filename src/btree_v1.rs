@@ -231,7 +231,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     #[inline]
-    async fn meta_block_loader(&self, v: &V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
+    async fn meta_block_loader(&self, v: V, buf: &mut [u8]) -> Result<Vec<(V, Vec<u8>)>> {
         self.block_loader.read(v, buf, 0).await
     }
 
@@ -242,7 +242,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         }
 
         if let Some(mut node) = BtreeNode::<K, V>::new(val, self.meta_block_size) {
-            let more = self.meta_block_loader(&val, node.as_mut()).await?;
+            let more = self.meta_block_loader(val, node.as_mut()).await?;
             let n = Rc::new(RefCell::new(node));
             list.insert(val, n.clone());
 
