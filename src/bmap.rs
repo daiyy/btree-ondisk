@@ -654,6 +654,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     ///
     /// # Errors
     ///
+    /// * NotFound - target key not found in bmap.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
     pub async fn truncate(&mut self, key: &K) -> Result<()> {
