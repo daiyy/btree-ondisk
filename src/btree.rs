@@ -402,12 +402,12 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
                     list.insert(v, n.clone());
                     drop(list);
                 } else {
-                    return Err(Error::new(ErrorKind::OutOfMemory, ""));
+                    return Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"));
                 }
             }
             return Ok(n);
         }
-        return Err(Error::new(ErrorKind::OutOfMemory, ""));
+        return Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"));
     }
 
     pub(crate) fn get_new_node(&self, val: &V) -> Result<BtreeNodeRef<'a, K, V>> {
@@ -422,7 +422,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             }
             return Ok(n);
         }
-        return Err(Error::new(ErrorKind::OutOfMemory, ""));
+        return Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"));
     }
 
     fn remove_from_nodes(&self, node: BtreeNodeRef<K, V>) -> Result<()> {
@@ -453,7 +453,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         let root = self.get_root_node();
         let mut level = root.get_level();
         if level < minlevel || root.get_nchild() <= 0 {
-            return Err(Error::new(ErrorKind::NotFound, ""));
+            return Err(Error::new(ErrorKind::NotFound, "btree root node not eligible for lookup"));
         }
 
         let (mut found, mut index) = root.lookup(key);
@@ -490,7 +490,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         }
 
         if !found {
-            return Err(Error::new(ErrorKind::NotFound, ""));
+            return Err(Error::new(ErrorKind::NotFound, "key not found through btree node lookup"));
         }
 
         Ok(value)
@@ -501,7 +501,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         let mut node = self.get_root_node();
         let nchild = node.get_nchild();
         if nchild == 0 {
-            return Err(Error::new(ErrorKind::NotFound, ""));
+            return Err(Error::new(ErrorKind::NotFound, "btree root node has no children"));
         }
         let mut index = nchild - 1;
         let mut level = node.get_level();
@@ -736,7 +736,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
             }
             next_adj = 1;
         }
-        Err(Error::new(ErrorKind::NotFound, ""))
+        Err(Error::new(ErrorKind::NotFound, "key not found through btree get next key"))
     }
 
     // test if map is dirty, expose to crate
@@ -1406,7 +1406,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
         let res = self.do_lookup(&path, &key, BTREE_NODE_LEVEL_MIN).await;
         match res {
             Ok(_) => {
-                return Err(Error::new(ErrorKind::AlreadyExists, ""));
+                return Err(Error::new(ErrorKind::AlreadyExists, "key value already exists in btree"));
             },
             Err(e) => {
                 if e.kind() != ErrorKind::NotFound {

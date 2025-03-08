@@ -148,12 +148,12 @@ impl<'a, K, V> DirectMap<'a, K, V>
     #[maybe_async::maybe_async]
     pub(crate) async fn assign(&self, key: &K, newval: V) -> Result<()> {
         if self.is_key_exceed(key) {
-            return Err(Error::new(ErrorKind::InvalidData, ""));
+            return Err(Error::new(ErrorKind::InvalidData, "assign key exceed direct node space"));
         }
         let index = (*key).into() as usize;
         let val = self.root.get_val(index);
         if val.is_invalid() {
-            return Err(Error::new(ErrorKind::NotFound, ""));
+            return Err(Error::new(ErrorKind::NotFound, "assign key not found in direct node"));
         }
         self.root.set_val(index, &newval);
         self.set_dirty();
@@ -204,11 +204,11 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
     async fn lookup(&self, key: &K, level: usize) -> Result<V> {
         let index = (*key).into() as usize;
         if index > self.root.get_capacity() - 1 || level != 1 {
-            return Err(Error::new(ErrorKind::NotFound, ""));
+            return Err(Error::new(ErrorKind::NotFound, "lookup key exceed direct node space"));
         }
         let val = self.root.get_val(index);
         if val.is_invalid() {
-            return Err(Error::new(ErrorKind::NotFound, ""));
+            return Err(Error::new(ErrorKind::NotFound, "lookup key not found in direct node"));
         }
         return Ok(*val);
     }
@@ -217,11 +217,11 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
     async fn lookup_contig(&self, key: &K, maxblocks: usize) -> Result<(V, usize)> {
         let index = (*key).into() as usize;
         if index > self.root.get_capacity() - 1 {
-            return Err(Error::new(ErrorKind::NotFound, ""));
+            return Err(Error::new(ErrorKind::NotFound, "lookup key exceed direct node space"));
         }
         let val = self.root.get_val(index);
         if val.is_invalid() {
-            return Err(Error::new(ErrorKind::NotFound, ""));
+            return Err(Error::new(ErrorKind::NotFound, "lookup key not found in direct node"));
         }
         let max = std::cmp::min(maxblocks, self.root.get_capacity() - 1 - index + 1);
         let mut count = 1;
@@ -238,10 +238,10 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
     async fn insert(&self, key: K, val: V) -> Result<()> {
         let index = key.into() as usize;
         if index > self.root.get_capacity() - 1 {
-            return Err(Error::new(ErrorKind::NotFound, ""));
+            return Err(Error::new(ErrorKind::NotFound, "insert key exceed direct node space"));
         }
         if !self.root.get_val(index).is_invalid() {
-            return Err(Error::new(ErrorKind::AlreadyExists, ""));
+            return Err(Error::new(ErrorKind::AlreadyExists, "insert key exists in direct node"));
         }
         let index = key.into() as usize;
         self.root.set_val(index, &val);
@@ -253,7 +253,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
     async fn insert_or_update(&self, key: K, val: V) -> Result<Option<V>> {
         let index = key.into() as usize;
         if index > self.root.get_capacity() - 1 {
-            return Err(Error::new(ErrorKind::NotFound, ""));
+            return Err(Error::new(ErrorKind::NotFound, "insert key exceed direct node space"));
         }
         let old_val = if !self.root.get_val(index).is_invalid() {
             // old val
@@ -272,7 +272,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         let index = (*key).into() as usize;
         if index > self.root.get_capacity() ||
                 self.root.get_val(index).is_invalid() {
-            return Err(Error::new(ErrorKind::NotFound, ""));
+            return Err(Error::new(ErrorKind::NotFound, "delete key exceed direct node space or not exists"));
         }
         let _ = self.root.set_val(index, &V::invalid_value());
         self.set_dirty();
@@ -289,7 +289,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             }
             key += 1;
         }
-        Err(Error::new(ErrorKind::NotFound, ""))
+        Err(Error::new(ErrorKind::NotFound, "seek key not found in direct node"))
     }
 
     #[maybe_async::maybe_async]
@@ -305,6 +305,6 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         if last_key.is_some() {
             return Ok::<K, Error>(last_key.unwrap());
         }
-        Err(Error::new(ErrorKind::NotFound, ""))
+        Err(Error::new(ErrorKind::NotFound, "last key not found in direct node"))
     }
 }
