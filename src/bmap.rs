@@ -12,11 +12,12 @@ use atomic_refcell::AtomicRefCell;
 use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
 use std::io::{Result, ErrorKind};
+use std::any::Any;
 use crate::VMap;
 use crate::{NodeValue, BlockLoader};
 use crate::direct::DirectMap;
 use crate::btree::BtreeMap;
-use crate::node::{BtreeNode, DirectNode};
+use crate::node::{BtreeNode, DirectNode, BTREE_NODE_FLAG_LEAF, BTREE_NODE_FLAG_LARGE};
 use crate::btree::{BtreeNodeRef, BtreeNodeDirty};
 
 #[derive(Default, Debug)]
@@ -29,16 +30,17 @@ pub struct BMapStat {
     pub nodes_l1: usize,
 }
 
-pub enum NodeType<'a, K, V, L: BlockLoader<V>> {
-    Direct(DirectMap<'a, K, V>),
-    Btree(BtreeMap<'a, K, V, L>),
+pub enum NodeType<'a, K, V, P, L: BlockLoader<P>> {
+    Direct(DirectMap<'a, K, V, P>),
+    Btree(BtreeMap<'a, K, V, P, L>),
 }
 
-impl<'a, K, V, L> fmt::Display for NodeType<'a, K, V, L>
+impl<'a, K, V, P, L> fmt::Display for NodeType<'a, K, V, P, L>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
         V: Copy + fmt::Display + NodeValue<V>,
-        L: BlockLoader<V>
+        P: Copy + fmt::Display + NodeValue<P>,
+        L: BlockLoader<P>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -52,33 +54,35 @@ impl<'a, K, V, L> fmt::Display for NodeType<'a, K, V, L>
     }
 }
 
-pub struct BMap<'a, K, V, L: BlockLoader<V>> {
-    inner: NodeType<'a, K, V, L>,
+pub struct BMap<'a, K, V, P, L: BlockLoader<P>> {
+    inner: NodeType<'a, K, V, P, L>,
     meta_block_size: usize,
     block_loader: Option<L>,
 }
 
-impl<'a, K, V, L> fmt::Display for BMap<'a, K, V, L>
+impl<'a, K, V, P, L> fmt::Display for BMap<'a, K, V, P, L>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
         V: Copy + fmt::Display + NodeValue<V>,
-        L: BlockLoader<V>
+        P: Copy + fmt::Display + NodeValue<P>,
+        L: BlockLoader<P>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.inner)
     }
 }
 
-impl<'a, K, V, L> BMap<'a, K, V, L>
+impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V> + Into<u64> + From<u64>,
-        V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
-        L: BlockLoader<V>,
+        V: Copy + Default + std::fmt::Display + NodeValue<V>,
+        K: Into<u64> + From<u64>,
+        P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        P: NodeValue<P> + Into<u64> + From<u64>,
+        L: BlockLoader<P>,
 {
     #[maybe_async::maybe_async]
-    async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: V, limit: usize, key: K, val: V) -> Result<()> {
+    async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: P, limit: usize, key: K, val: V) -> Result<()> {
         // collect all valid value from old direct root
         let mut old_kv = Vec::new();
         let direct = DirectNode::<V>::from_slice(&data);
@@ -93,11 +97,13 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         let mut v = Vec::with_capacity(data.len());
         // root node to all zero
         v.resize(data.len(), 0);
+        // init flags with leaf and large
+        v[0] = BTREE_NODE_FLAG_LEAF | BTREE_NODE_FLAG_LARGE;
         let btree = BtreeMap {
             #[cfg(feature = "rc")]
-            root: Rc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
+            root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&v))),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(BtreeNode::<K, V>::from_slice(&v))),
+            root: Arc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&v))),
             data: v,
             #[cfg(feature = "rc")]
             nodes: RefCell::new(HashMap::new()),
@@ -140,10 +146,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         // create child node @level 1
         {
 
-        let node = btree.get_new_node(&last_seq)?;
-        node.set_flags(0);
-        node.set_nchild(0);
-        node.set_level(1);
+        let node = btree.get_new_node(&last_seq, 1)?;
+        node.init(1, 0);
         // save first key
         first_root_key = old_kv[0].0;
         let mut index = 0;
@@ -162,6 +166,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
 
         btree.root.set_nchild(0);
         btree.root.init_root(2, true);
+        // root no more leaf
+        btree.root.clear_leaf();
         btree.root.insert(0, &first_root_key, &last_seq);
 
         }
@@ -173,7 +179,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
 
     #[maybe_async::maybe_async]
     async fn convert_to_direct(&mut self, _key: &K, input: &Vec<(K, V)>,
-            root_node_size: usize, last_seq: V, limit: usize, block_loader: L) -> Result<()> {
+            root_node_size: usize, last_seq: P, limit: usize, block_loader: L) -> Result<()> {
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
         let direct = DirectMap {
@@ -195,6 +201,8 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             #[cfg(feature = "arc")]
             cache_limit: Arc::new(AtomicUsize::new(limit)),
             marker: PhantomData,
+            #[cfg(feature = "arc")]
+            marker_p: PhantomData,
         };
 
         for (k, v) in input {
@@ -210,13 +218,14 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     }
 }
 
-impl<'a, K, V, L> BMap<'a, K, V, L>
+impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V> + Into<u64> + From<u64>,
-        V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
-        L: BlockLoader<V> + Clone,
+        V: Copy + Default + std::fmt::Display + NodeValue<V> + Any,
+        K: Into<u64> + From<u64>,
+        P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
+        P: NodeValue<P> + From<u64> + Into<u64> + Any,
+        L: BlockLoader<P> + Clone,
 {
     /// Constructs a map start from empty direct node.
     // start from a direct node at level 1 with no entries
@@ -234,7 +243,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
         root.init(0, 1, 0);
 
         Self {
-            inner: NodeType::Direct(DirectMap::<K, V>::new(&data)),
+            inner: NodeType::Direct(DirectMap::<K, V, P>::new(&data)),
             meta_block_size: meta_block_size,
             block_loader: Some(block_loader),
         }
@@ -245,7 +254,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// Data will be copied into internal buffer.
     pub fn new_direct(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
         Self {
-            inner: NodeType::Direct(DirectMap::<K, V>::new(data)),
+            inner: NodeType::Direct(DirectMap::<K, V, P>::new(data)),
             meta_block_size: meta_block_size,
             block_loader: Some(block_loader),
         }
@@ -256,7 +265,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// Data will be copied into internal buffer.
     pub fn new_btree(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
         Self {
-            inner: NodeType::Btree(BtreeMap::<K, V, L>::new(data, meta_block_size, block_loader)),
+            inner: NodeType::Btree(BtreeMap::<K, V, P, L>::new(data, meta_block_size, block_loader)),
             meta_block_size: meta_block_size,
             block_loader: None,
         }
@@ -459,7 +468,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     }
 
     /// Collect all dirty nodes into a Vec.
-    pub fn lookup_dirty(&self) -> Vec<BtreeNodeDirty<'a, K, V>> {
+    pub fn lookup_dirty(&self) -> Vec<BtreeNodeDirty<'a, K, V, P>> {
         match &self.inner {
             NodeType::Direct(_) => {
                 return Vec::new();
@@ -519,18 +528,31 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn assign(&self, key: &K, newval: V, node: Option<BtreeNodeDirty<'_, K, V>>) -> Result<()> {
+    pub async fn assign(&self, key: &K, newid: P, node: Option<BtreeNodeDirty<'_, K, V, P>>) -> Result<()> {
         #[cfg(feature = "value-check")]
-        if !newval.is_valid_extern_assign() {
+        if !newid.is_valid_extern_assign() {
             // potiential conflict with seq value internal used
             panic!("assign value is not in a valid format");
         }
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.assign(key, newval).await;
+                if node.is_some() {
+                    return Ok(());
+                }
+                // assign data node only works when P and V is same type
+                let any = &newid as &dyn Any;
+                match any.downcast_ref::<V>() {
+                    Some(newval) => {
+                        return direct.assign(key, *newval).await;
+                    },
+                    None => {
+                        panic!("V type {} and P type {} not the same, you can not use fn assign_data_node",
+                            std::any::type_name::<V>(), std::any::type_name::<P>());
+                    },
+                }
             },
             NodeType::Btree(btree) => {
-                return btree.assign(key, newval, node.map(|n| n.clone_node_ref())).await;
+                return btree.assign(key, newid, node.map(|n| n.clone_node_ref())).await;
             },
         }
     }
@@ -542,9 +564,9 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn assign_meta_node(&self, newval: V, node: BtreeNodeDirty<'_, K, V>) -> Result<()> {
+    pub async fn assign_meta_node(&self, newid: P, node: BtreeNodeDirty<'_, K, V, P>) -> Result<()> {
         #[cfg(feature = "value-check")]
-        if !newval.is_valid_extern_assign() {
+        if !newid.is_valid_extern_assign() {
             // potiential conflict with seq value internal used
             panic!("assign value is not in a valid format");
         }
@@ -555,7 +577,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
             NodeType::Btree(btree) => {
                 // key is unused, so use 0
                 let zero_key = 0.into();
-                return btree.assign(&zero_key, newval, Some(node.clone_node_ref())).await;
+                return btree.assign(&zero_key, newid, Some(node.clone_node_ref())).await;
             },
         }
     }
@@ -567,18 +589,28 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn assign_data_node(&self, key: &K, newval: V) -> Result<()> {
+    pub async fn assign_data_node(&self, key: &K, newid: P) -> Result<()> {
         #[cfg(feature = "value-check")]
-        if !newval.is_valid_extern_assign() {
+        if !newid.is_valid_extern_assign() {
             // potiential conflict with seq value internal used
             panic!("assign value is not in a valid format");
         }
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.assign(key, newval).await;
+                // assign data node only works when P and V is same type
+                let any = &newid as &dyn Any;
+                match any.downcast_ref::<V>() {
+                    Some(newval) => {
+                        return direct.assign(key, *newval).await;
+                    },
+                    None => {
+                        panic!("V type {} and P type {} not the same, you can not use fn assign_data_node",
+                            std::any::type_name::<V>(), std::any::type_name::<P>());
+                    },
+                }
             },
             NodeType::Btree(btree) => {
-                return btree.assign(key, newval, None).await;
+                return btree.assign(key, newid, None).await;
             },
         }
     }
@@ -597,7 +629,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     /// * NotFound - key not found.
     /// * OutOfMemory - insufficient memory.
     #[maybe_async::maybe_async]
-    pub async fn propagate(&self, key: &K, node: Option<BtreeNodeRef<'_, K, V>>) -> Result<()> {
+    pub async fn propagate(&self, key: &K, node: Option<BtreeNodeRef<'_, K, V, P>>) -> Result<()> {
         match &self.inner {
             NodeType::Direct(direct) => {
                 return direct.propagate(key).await;
@@ -663,7 +695,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
 
     /// Read in root node from extenal buffer.
     pub fn read(buf: &[u8], meta_block_size: usize, block_loader: L) -> Self {
-        let root = BtreeNode::<K, V>::from_slice(buf);
+        let root = BtreeNode::<K, V, P>::from_slice(buf);
         if root.is_large() {
             return Self::new_btree(buf, meta_block_size, block_loader);
         }
@@ -738,7 +770,7 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     }
 
     /// Return iterator for all non-leaf node which including root node
-    pub fn nonleafnode_iter<'b>(&'b self) -> NonLeafNodeIter<'a, 'b, K, V, L> {
+    pub fn nonleafnode_iter<'b>(&'b self) -> NonLeafNodeIter<'a, 'b, K, V, P, L> {
         NonLeafNodeIter::new(self)
     }
 
@@ -756,25 +788,26 @@ impl<'a, K, V, L> BMap<'a, K, V, L>
     }
 }
 
-pub struct NonLeafNodeIter<'a, 'b, K, V, L: BlockLoader<V>> {
-    bmap: &'b BMap<'a, K, V, L>,
+pub struct NonLeafNodeIter<'a, 'b, K, V, P, L: BlockLoader<P>> {
+    bmap: &'b BMap<'a, K, V, P, L>,
     last_root_node_index: usize,
     root_node_cap_or_nchild: usize,
     last_btree_node_index: usize,
-    last_btree_node: Option<BtreeNodeRef<'a, K, V>>,
-    btree_node_backlog: VecDeque<BtreeNodeRef<'a, K, V>>,
+    last_btree_node: Option<BtreeNodeRef<'a, K, V, P>>,
+    btree_node_backlog: VecDeque<BtreeNodeRef<'a, K, V, P>>,
 }
 
-impl<'a, 'b, K, V, L> NonLeafNodeIter<'a, 'b, K, V, L>
+impl<'a, 'b, K, V, P, L> NonLeafNodeIter<'a, 'b, K, V, P, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V> + Into<u64> + From<u64>,
-        V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
-        L: BlockLoader<V> + Clone,
+        V: Copy + Default + std::fmt::Display + NodeValue<V> + Any,
+        K: Into<u64> + From<u64>,
+        P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64> + NodeValue<P>,
+        P: From<u64> + Into<u64> + Any,
+        L: BlockLoader<P> + Clone,
 {
-    fn new(bmap: &'b BMap<'a, K, V, L>) -> Self {
-        let root = BtreeNode::<K, V>::from_slice(bmap.as_slice());
+    fn new(bmap: &'b BMap<'a, K, V, P, L>) -> Self {
+        let root = BtreeNode::<K, V, P>::from_slice(bmap.as_slice());
         let root_node_cap_or_nchild = if root.is_large() {
             root.get_nchild()
         } else {
@@ -794,50 +827,43 @@ impl<'a, 'b, K, V, L> NonLeafNodeIter<'a, 'b, K, V, L>
 }
 
 /// Iterate all values of intermediate nodes from highest level to level 1
-impl<'a, 'b, K, V, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, L>
+impl<'a, 'b, K, V, P, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V> + Into<u64> + From<u64>,
-        V: From<K> + NodeValue<V> + From<u64> + Into<u64>,
-        L: BlockLoader<V> + Clone,
+        V: Copy + Default + std::fmt::Display + NodeValue<V> + Any,
+        K: Into<u64> + From<u64>,
+        P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64> + NodeValue<P>,
+        P: From<u64> + Into<u64> + Any,
+        L: BlockLoader<P> + Clone,
 {
-    type Item = V;
+    type Item = P;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         match &self.bmap.inner {
             NodeType::Direct(_) => {
-                // try working on root node only for direct node
-                for idx in self.last_root_node_index..self.root_node_cap_or_nchild {
-                    let node = DirectNode::<V>::from_slice(self.bmap.as_slice());
-                    let v = *node.get_val(idx);
-                    self.last_root_node_index += 1;
-                    if !v.is_invalid() {
-                        return Some(v);
-                    }
-                }
+                // direct node is always leaf node
                 return None;
             },
             NodeType::Btree(btree) => {
                 // try working on root node
                 for idx in self.last_root_node_index..self.root_node_cap_or_nchild {
-                    let node = BtreeNode::<K, V>::from_slice(self.bmap.as_slice());
-                    let v = *node.get_val(idx);
-                    assert!(!v.is_invalid());
+                    let node = BtreeNode::<K, V, P>::from_slice(self.bmap.as_slice());
+                    let id = *node.get_val::<P>(idx);
+                    assert!(!id.is_invalid());
                     if node.get_level() >= 2 {
                         // for L1 node, we don't need to fetch actual data block
                         // so we limit condition for fetch next level node here to >= 2
                         #[cfg(not(feature = "sync-api"))]
                         let node_ref = futures::executor::block_on(async {
-                            btree.get_from_nodes(&v).await.unwrap_or_else(|_| panic!("failed to fetch node {v}"))
+                            btree.get_from_nodes(&id).await.unwrap_or_else(|_| panic!("failed to fetch node {id}"))
                         });
                         #[cfg(feature = "sync-api")]
-                        let node_ref = btree.get_from_nodes(&v).unwrap_or_else(|_| panic!("failed to fetch node {v}"));
+                        let node_ref = btree.get_from_nodes(&id).unwrap_or_else(|_| panic!("failed to fetch node {id}"));
                         self.btree_node_backlog.push_back(node_ref);
                     }
                     self.last_root_node_index += 1;
-                    return Some(v);
+                    return Some(id);
                 }
 
                 // try find the node we currently working on
@@ -855,17 +881,17 @@ impl<'a, 'b, K, V, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, L>
                 };
 
                 // try working on one intermediate node
-                let v = *node.get_val(self.last_btree_node_index);
-                assert!(!v.is_invalid());
+                let id = *node.get_val::<P>(self.last_btree_node_index);
+                assert!(!id.is_invalid());
                 if node.get_level() >= 2 {
                     // for L1 node, we don't need to fetch actual data block
                     // so we limit condition for fetch next level node here to >= 2
                     #[cfg(not(feature = "sync-api"))]
                     let node_ref = futures::executor::block_on(async {
-                        btree.get_from_nodes(&v).await.unwrap_or_else(|_| panic!("failed to fetch node {v}"))
+                        btree.get_from_nodes(&id).await.unwrap_or_else(|_| panic!("failed to fetch node {id}"))
                     });
                     #[cfg(feature = "sync-api")]
-                    let node_ref = btree.get_from_nodes(&v).unwrap_or_else(|_| panic!("failed to fetch node {v}"));
+                    let node_ref = btree.get_from_nodes(&id).unwrap_or_else(|_| panic!("failed to fetch node {id}"));
                     self.btree_node_backlog.push_back(node_ref);
                 }
                 self.last_btree_node_index += 1;
@@ -875,7 +901,7 @@ impl<'a, 'b, K, V, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, L>
                     // will fetch next available node from backlog next time
                     self.last_btree_node = None;
                 }
-                return Some(v);
+                return Some(id);
             },
         }
     }

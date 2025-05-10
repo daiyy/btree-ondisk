@@ -32,9 +32,7 @@ pub use crate::loader::memory::MemoryBlockLoader;
 pub trait VMap<K, V>
     where
         K: Copy + Default + fmt::Display + PartialOrd + Eq + std::hash::Hash,
-        V: Copy + Default + fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V>,
-        V: From<K>
+        V: Copy + Default + fmt::Display,
 {
     async fn lookup(&self, key: &K, level: usize) -> Result<V>;
     async fn lookup_contig(&self, key: &K, maxblocks: usize) -> Result<(V, usize)>;

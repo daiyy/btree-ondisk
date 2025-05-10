@@ -15,26 +15,27 @@ use crate::node::*;
 use crate::DEFAULT_CACHE_UNLIMITED;
 
 #[cfg(feature = "rc")]
-pub struct DirectMap<'a, K, V> {
+pub struct DirectMap<'a, K, V, P> {
     pub data: Vec<u8>,
     pub root: Rc<Box<DirectNode<'a, V>>>,
-    pub last_seq: RefCell<V>,
+    pub last_seq: RefCell<P>,
     pub dirty: RefCell<bool>,
     pub cache_limit: RefCell<usize>,
     pub marker: PhantomData<K>,
 }
 
 #[cfg(feature = "arc")]
-pub struct DirectMap<'a, K, V> {
+pub struct DirectMap<'a, K, V, P> {
     pub data: Vec<u8>,
     pub root: Arc<Box<DirectNode<'a, V>>>,
     pub last_seq: Arc<AtomicU64>,
     pub dirty: Arc<AtomicBool>,
     pub cache_limit: Arc<AtomicUsize>,
     pub marker: PhantomData<K>,
+    pub marker_p: PhantomData<P>,
 }
 
-impl<'a, K, V> fmt::Display for DirectMap<'a, K, V>
+impl<'a, K, V, P> fmt::Display for DirectMap<'a, K, V, P>
     where
         V: Copy + fmt::Display
 {
@@ -43,17 +44,17 @@ impl<'a, K, V> fmt::Display for DirectMap<'a, K, V>
     }
 }
 
-impl<'a, K, V> DirectMap<'a, K, V>
+impl<'a, K, V, P> DirectMap<'a, K, V, P>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V> + From<u64> + Into<u64>
+        V: Copy + Default + std::fmt::Display + NodeValue<V>,
+        K: Into<u64>,
+        P: Copy + NodeValue<P> + std::ops::AddAssign<u64> + From<u64> + Into<u64>,
 {
     #[cfg(feature = "rc")]
     #[allow(dead_code)]
     #[inline]
-    fn get_next_seq(&self) -> V {
+    fn get_next_seq(&self) -> P {
         let old_value = *self.last_seq.borrow();
         *self.last_seq.borrow_mut() += 1;
         old_value
@@ -62,7 +63,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
     #[cfg(feature = "arc")]
     #[allow(dead_code)]
     #[inline]
-    fn get_next_seq(&self) -> V {
+    fn get_next_seq(&self) -> P {
         let old_value = self.last_seq.fetch_add(1, Ordering::SeqCst);
         From::<u64>::from(old_value)
     }
@@ -145,6 +146,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         self.is_dirty()
     }
 
+    #[allow(dead_code)]
     #[maybe_async::maybe_async]
     pub(crate) async fn assign(&self, key: &K, newval: V) -> Result<()> {
         if self.is_key_exceed(key) {
@@ -176,11 +178,11 @@ impl<'a, K, V> DirectMap<'a, K, V>
             root: Arc::new(Box::new(DirectNode::<V>::from_slice(&v))),
             data: v,
             #[cfg(feature = "rc")]
-            last_seq: RefCell::new(V::invalid_value()),
+            last_seq: RefCell::new(P::invalid_value()),
             #[cfg(feature = "rc")]
             dirty: RefCell::new(false),
             #[cfg(feature = "arc")]
-            last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(V::invalid_value()))),
+            last_seq: Arc::new(AtomicU64::new(P::invalid_value().into())),
             #[cfg(feature = "arc")]
             dirty: Arc::new(AtomicBool::new(false)),
             #[cfg(feature = "rc")]
@@ -188,17 +190,19 @@ impl<'a, K, V> DirectMap<'a, K, V>
             #[cfg(feature = "arc")]
             cache_limit: Arc::new(AtomicUsize::new(DEFAULT_CACHE_UNLIMITED)),
             marker: PhantomData,
+            #[cfg(feature = "arc")]
+            marker_p: PhantomData,
         }
     }
 
 }
 
-impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
+impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V> + From<u64> + Into<u64>
+        V: Copy + Default + std::fmt::Display + NodeValue<V>,
+        K: Into<u64>,
+        P: Copy + NodeValue<P> + std::ops::AddAssign<u64> + From<u64> + Into<u64>,
 {
     #[maybe_async::maybe_async]
     async fn lookup(&self, key: &K, level: usize) -> Result<V> {
