@@ -131,7 +131,7 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
             btree.root.set_nchild(0);
             btree.root.init_root(1, true);
             let mut index = 0;
-            for (k, v) in old_kv {
+            for (k, v) in old_kv.into_iter() {
                 btree.root.insert(index, &k, &v);
                 index += 1;
             }
@@ -151,11 +151,11 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
         // save first key
         first_root_key = old_kv[0].0;
         let mut index = 0;
-        for (k, v) in old_kv {
-            node.insert(index, &k, &v);
+        for (k, v) in old_kv.into_iter() {
+            node.insert::<V>(index, &k, &v);
             index += 1;
         }
-        node.insert(index, &key, &val);
+        node.insert::<V>(index, &key, &val);
         node.mark_dirty();
         btree.nodes.borrow_mut().insert(last_seq, node);
 
