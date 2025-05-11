@@ -16,7 +16,7 @@ async fn main() {
     let num_blocks = five_tb / data_block_size;
 
     let null_loader = NullBlockLoader;
-    let mut bmap = BMap::<u64, u64, NullBlockLoader>::new(root_node_size, meta_node_size, null_loader);
+    let mut bmap = BMap::<u64, u64, u64, NullBlockLoader>::new(root_node_size, meta_node_size, null_loader);
 
     println!("Creating metadata for 5TiB file, root node size: {}, meta node size: {}, data block size: {} ...",
         root_node_size, meta_node_size, data_block_size);
@@ -48,7 +48,7 @@ async fn main() {
     let num_blocks = five_tb / data_block_size;
 
     let null_loader = NullBlockLoader;
-    let mut bmap = BMap::<u64, u64, NullBlockLoader>::new(root_node_size, meta_node_size, null_loader);
+    let mut bmap = BMap::<u64, u64, u64, NullBlockLoader>::new(root_node_size, meta_node_size, null_loader);
 
     println!("Creating metadata for 5TiB file, root node size: {}, meta node size: {}, data block size: {} ...",
         root_node_size, meta_node_size, data_block_size);
@@ -92,7 +92,7 @@ async fn main() {
     let num_blocks = five_tb / data_block_size;
 
     let null_loader = NullBlockLoader;
-    let mut bmap = BMap::<u64, u64, NullBlockLoader>::new(root_node_size, meta_node_size, null_loader);
+    let mut bmap = BMap::<u64, u64, u64, NullBlockLoader>::new(root_node_size, meta_node_size, null_loader);
 
     println!("Creating metadata for 5TiB file, root node size: {}, meta node size: {}, data block size: {} ...",
         root_node_size, meta_node_size, data_block_size);

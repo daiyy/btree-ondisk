@@ -9,7 +9,7 @@ const VALID_EXTERNAL_ASSIGN_MASK: u64 = 0xFFFF_0000_0000_0000;
 const CACHE_LIMIT: usize = 10;
 
 struct MemoryFile<'a> {
-    bmap: BMap<'a, u64, u64, MemoryBlockLoader<u64>>,
+    bmap: BMap<'a, u64, u64, u64, MemoryBlockLoader<u64>>,
     loader: MemoryBlockLoader<u64>,
     #[allow(dead_code)]
     data_block_size: usize,
@@ -23,7 +23,7 @@ struct MemoryFile<'a> {
 impl<'a> MemoryFile<'a> {
     fn new(root_node_size: usize, meta_node_size: usize, data_block_size: usize, max_file_blk_idx: u64) -> Self {
         let loader = MemoryBlockLoader::new(data_block_size);
-        let bmap = BMap::<u64, u64, MemoryBlockLoader<u64>>::new(root_node_size, meta_node_size, loader.clone());
+        let bmap = BMap::<u64, u64, u64, MemoryBlockLoader<u64>>::new(root_node_size, meta_node_size, loader.clone());
         // limit max cached meta data nodes
         bmap.set_cache_limit(CACHE_LIMIT);
         Self {
@@ -39,7 +39,7 @@ impl<'a> MemoryFile<'a> {
 
     #[maybe_async::maybe_async]
     async fn read(&self, blk_idx: u64) -> Result<()> {
-        let res = self.bmap.lookup(blk_idx).await;
+        let res = self.bmap.lookup(&blk_idx).await;
         if let Some(blk_ptr) = self.data_blocks_tracker.get(&blk_idx) {
             assert!(res.unwrap() == *blk_ptr);
             return Ok(());
@@ -76,7 +76,7 @@ impl<'a> MemoryFile<'a> {
 
     #[maybe_async::maybe_async]
     async fn delete(&mut self, blk_idx: u64) -> Result<()> {
-        let res = self.bmap.delete(blk_idx).await;
+        let res = self.bmap.delete(&blk_idx).await;
         if res.is_ok() {
             // could be on dirty list or not
             let _ = self.data_blocks_dirty.remove(&blk_idx);
@@ -122,7 +122,7 @@ impl<'a> MemoryFile<'a> {
         let mut v = Vec::new();
         for blk_idx in self.data_blocks_dirty.iter() {
             let blk_ptr = self.seq;
-            self.bmap.assign_data_node(*blk_idx, blk_ptr.clone()).await?;
+            self.bmap.assign_data_node(blk_idx, blk_ptr.clone()).await?;
             v.push((*blk_idx, blk_ptr));
             self.seq += 1;
         }
@@ -212,7 +212,7 @@ async fn do_op(op: usize, file: &mut MemoryFile<'_>, blk_idx: u64) -> Result<()>
 
 #[maybe_async::maybe_async]
 async fn cleanup(file: &mut MemoryFile<'_>) -> Result<()> {
-    file.bmap.truncate(0).await
+    file.bmap.truncate(&0).await
 }
 
 #[maybe_async::maybe_async]

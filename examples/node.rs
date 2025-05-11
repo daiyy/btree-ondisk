@@ -22,7 +22,7 @@ fn main() {
 
     // use node
     let now = Instant::now();
-    let n = node::BtreeNode::<u64, u64>::new(size).unwrap();
+    let n = node::BtreeNode::<u64, u64, u64>::new(size).unwrap();
     for i in 0..n.get_capacity() {
         let k = i as u64;
         n.insert(i, &k, &k);

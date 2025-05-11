@@ -8,7 +8,7 @@ const VALID_EXTERNAL_ASSIGN_MASK: u64 = 0xFFFF_0000_0000_0000;
 const CACHE_LIMIT: usize = 10;
 
 struct MemoryFile<'a> {
-    bmap: BMap<'a, u64, u64, MemoryBlockLoader<u64>>,
+    bmap: BMap<'a, u64, u64, u64, MemoryBlockLoader<u64>>,
     loader: MemoryBlockLoader<u64>,
     data_block_size: usize,
     data_blocks_dirty: BTreeSet<u64>,
@@ -19,7 +19,7 @@ struct MemoryFile<'a> {
 impl<'a> MemoryFile<'a> {
     fn new(root_node_size: usize, meta_node_size: usize, data_block_size: usize) -> Self {
         let loader = MemoryBlockLoader::new(data_block_size);
-        let bmap = BMap::<u64, u64, MemoryBlockLoader<u64>>::new(root_node_size, meta_node_size, loader.clone());
+        let bmap = BMap::<u64, u64, u64, MemoryBlockLoader<u64>>::new(root_node_size, meta_node_size, loader.clone());
         // limit max cached meta data nodes
         bmap.set_cache_limit(CACHE_LIMIT);
         Self {

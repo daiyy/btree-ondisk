@@ -5,7 +5,7 @@ use btree_ondisk::bmap::BMap;
 use btree_ondisk::NullBlockLoader;
 
 pub(crate) struct File<'a> {
-    pub(crate) bmap: BMap<'a, u64, u64, NullBlockLoader>,
+    pub(crate) bmap: BMap<'a, u64, u64, u64, NullBlockLoader>,
     pub(crate) root_node_size: usize,
     pub(crate) meta_block_size: usize,
     pub(crate) data_block_size: usize,
@@ -19,7 +19,7 @@ impl<'a> File<'a> {
         let data_block_size = 4096;
 
         let loader = NullBlockLoader;
-        let bmap = BMap::<u64, u64, NullBlockLoader>::new(root_size, meta_block_size, loader);
+        let bmap = BMap::<u64, u64, u64, NullBlockLoader>::new(root_size, meta_block_size, loader);
         Self {
             bmap: bmap,
             root_node_size: root_size,
