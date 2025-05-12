@@ -43,7 +43,7 @@ impl fmt::Display for CustomValue {
     }
 }
 
-impl NodeValue<CustomValue> for CustomValue {
+impl NodeValue for CustomValue {
     fn is_invalid(&self) -> bool {
         if self == &Self::default() {
             return true;
