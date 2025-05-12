@@ -46,9 +46,9 @@ pub trait VMap<K, V>
 pub const VALID_EXTERNAL_ASSIGN_MASK: u64 = 0xFFFF_0000_0000_0000;
 pub const DEFAULT_CACHE_UNLIMITED: usize = usize::MAX; // unlimited by default
 
-pub trait NodeValue<V> {
+pub trait NodeValue {
     fn is_invalid(&self) -> bool;
-    fn invalid_value() -> V;
+    fn invalid_value() -> Self;
     fn is_valid_extern_assign(&self) -> bool;
 }
 
@@ -61,15 +61,13 @@ pub trait BlockLoader<V> {
     fn from_new_path(self, new_path: &str) -> Self;
 }
 
-impl<V> NodeValue<V> for u64
-    where V: From<u64>
-{
+impl NodeValue for u64 {
     fn is_invalid(&self) -> bool {
         self == &u64::MIN 
     }
 
-    fn invalid_value() -> V {
-       u64::MIN.into()
+    fn invalid_value() -> u64 {
+       u64::MIN
     }
 
     fn is_valid_extern_assign(&self) -> bool {

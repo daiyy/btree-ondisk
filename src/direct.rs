@@ -47,9 +47,9 @@ impl<'a, K, V, P> fmt::Display for DirectMap<'a, K, V, P>
 impl<'a, K, V, P> DirectMap<'a, K, V, P>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + NodeValue<V>,
+        V: Copy + Default + std::fmt::Display + NodeValue,
         K: Into<u64>,
-        P: Copy + NodeValue<P> + std::ops::AddAssign<u64> + From<u64> + Into<u64>,
+        P: Copy + NodeValue + std::ops::AddAssign<u64> + From<u64> + Into<u64>,
 {
     #[cfg(feature = "rc")]
     #[allow(dead_code)]
@@ -200,9 +200,9 @@ impl<'a, K, V, P> DirectMap<'a, K, V, P>
 impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + NodeValue<V>,
+        V: Copy + Default + std::fmt::Display + NodeValue,
         K: Into<u64>,
-        P: Copy + NodeValue<P> + std::ops::AddAssign<u64> + From<u64> + Into<u64>,
+        P: Copy + NodeValue + std::ops::AddAssign<u64> + From<u64> + Into<u64>,
 {
     #[maybe_async::maybe_async]
     async fn lookup(&self, key: &K, level: usize) -> Result<V> {

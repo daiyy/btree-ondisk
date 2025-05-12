@@ -43,8 +43,8 @@ unsafe impl<'a, K, V, P> Sync for BtreeNode<'a, K, V, P> {}
 impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display + NodeValue<V>,
-        P: Copy + fmt::Display + NodeValue<P>,
+        V: Copy + fmt::Display + NodeValue,
+        P: Copy + fmt::Display + NodeValue,
 {
     pub fn from_slice(buf: &[u8]) -> Self {
         let len = buf.len();
@@ -633,8 +633,8 @@ impl<'a, K, V, P> PartialEq for BtreeNode<'a, K, V, P> {
 impl<'a, K, V, P> fmt::Display for BtreeNode<'a, K, V, P>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display + NodeValue<V>,
-        P: Copy + fmt::Display + NodeValue<P>,
+        V: Copy + fmt::Display + NodeValue,
+        P: Copy + fmt::Display + NodeValue,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_large() {

@@ -54,7 +54,7 @@ pub struct BtreePath<'a, K, V> {
     levels: Vec<RefCell<BtreePathLevel<'a, K, V>>>,
 }
 
-impl<'a, K, V: Copy + Default + NodeValue<V>> BtreePath<'a, K, V>
+impl<'a, K, V: Copy + Default + NodeValue> BtreePath<'a, K, V>
 {
     pub fn new() -> Self {
         let mut l = Vec::with_capacity(BTREE_NODE_LEVEL_MAX);
@@ -162,7 +162,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>,
+        V: From<K> + NodeValue,
         L: BlockLoader<V>,
 {
     #[inline]
@@ -723,7 +723,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>,
+        V: From<K> + NodeValue,
         L: BlockLoader<V>,
 {
     fn op_insert(&self, path: &BtreePath<'_, K, V>, level: BtreeLevel, key: &mut K, val: &mut V) {
@@ -1059,7 +1059,7 @@ impl<'a, K, V, L> VMap<K, V> for BtreeMap<'a, K, V, L>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>,
+        V: From<K> + NodeValue,
         L: BlockLoader<V>,
 {
     async fn lookup(&self, key: &K, level: usize) -> Result<V> {

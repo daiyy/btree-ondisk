@@ -29,7 +29,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>
+        V: From<K> + NodeValue,
 {
     #[allow(dead_code)]
     #[inline]
@@ -107,7 +107,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         K: From<V> + Into<u64>,
-        V: From<K> + NodeValue<V>
+        V: From<K> + NodeValue,
 {
     async fn lookup(&self, key: &K, level: usize) -> Result<V> {
         let index = (*key).into() as usize;

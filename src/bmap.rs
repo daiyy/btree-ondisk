@@ -38,8 +38,8 @@ pub enum NodeType<'a, K, V, P, L: BlockLoader<P>> {
 impl<'a, K, V, P, L> fmt::Display for NodeType<'a, K, V, P, L>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display + NodeValue<V>,
-        P: Copy + fmt::Display + NodeValue<P>,
+        V: Copy + fmt::Display + NodeValue,
+        P: Copy + fmt::Display + NodeValue,
         L: BlockLoader<P>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -63,8 +63,8 @@ pub struct BMap<'a, K, V, P, L: BlockLoader<P>> {
 impl<'a, K, V, P, L> fmt::Display for BMap<'a, K, V, P, L>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display + NodeValue<V>,
-        P: Copy + fmt::Display + NodeValue<P>,
+        V: Copy + fmt::Display + NodeValue,
+        P: Copy + fmt::Display + NodeValue,
         L: BlockLoader<P>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -75,10 +75,10 @@ impl<'a, K, V, P, L> fmt::Display for BMap<'a, K, V, P, L>
 impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + NodeValue<V>,
+        V: Copy + Default + std::fmt::Display + NodeValue,
         K: Into<u64> + From<u64>,
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        P: NodeValue<P> + Into<u64> + From<u64>,
+        P: NodeValue + Into<u64> + From<u64>,
         L: BlockLoader<P>,
 {
     #[maybe_async::maybe_async]
@@ -221,10 +221,10 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
 impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + NodeValue<V> + Any,
+        V: Copy + Default + std::fmt::Display + NodeValue + Any,
         K: Into<u64> + From<u64>,
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        P: NodeValue<P> + From<u64> + Into<u64> + Any,
+        P: NodeValue + From<u64> + Into<u64> + Any,
         L: BlockLoader<P> + Clone,
 {
     /// Constructs a map start from empty direct node.
@@ -800,9 +800,9 @@ pub struct NonLeafNodeIter<'a, 'b, K, V, P, L: BlockLoader<P>> {
 impl<'a, 'b, K, V, P, L> NonLeafNodeIter<'a, 'b, K, V, P, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + NodeValue<V> + Any,
+        V: Copy + Default + std::fmt::Display + NodeValue + Any,
         K: Into<u64> + From<u64>,
-        P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64> + NodeValue<P>,
+        P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64> + NodeValue,
         P: From<u64> + Into<u64> + Any,
         L: BlockLoader<P> + Clone,
 {
@@ -830,9 +830,9 @@ impl<'a, 'b, K, V, P, L> NonLeafNodeIter<'a, 'b, K, V, P, L>
 impl<'a, 'b, K, V, P, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + NodeValue<V> + Any,
+        V: Copy + Default + std::fmt::Display + NodeValue + Any,
         K: Into<u64> + From<u64>,
-        P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64> + NodeValue<P>,
+        P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64> + NodeValue,
         P: From<u64> + Into<u64> + Any,
         L: BlockLoader<P> + Clone,
 {

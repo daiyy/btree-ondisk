@@ -30,8 +30,8 @@ pub struct BtreeNodeDirty<'a, K, V, P>(pub(crate) BtreeNodeRef<'a, K, V, P>);
 impl<'a, K, V, P> BtreeNodeDirty<'a, K, V, P>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display + NodeValue<V>,
-        P: Copy + fmt::Display + NodeValue<P>,
+        V: Copy + fmt::Display + NodeValue,
+        P: Copy + fmt::Display + NodeValue,
 {
     pub(crate) fn clone_node_ref(&self) -> BtreeNodeRef<'a, K, V, P> {
         self.0.clone()
@@ -87,8 +87,8 @@ pub struct BtreePath<'a, K, V, P> {
 
 impl<'a, K, V, P> BtreePath<'a, K, V, P>
     where
-        V: Copy + NodeValue<V>,
-        P: Copy + NodeValue<P>,
+        V: Copy + NodeValue,
+        P: Copy + NodeValue,
 {
     pub fn new() -> Self {
         let mut l = Vec::with_capacity(BTREE_NODE_LEVEL_MAX);
@@ -216,8 +216,8 @@ pub struct BtreeMap<'a, K, V, P, L: BlockLoader<P>> {
 impl<'a, K, V, P, L> fmt::Display for BtreeMap<'a, K, V, P, L>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
-        V: Copy + fmt::Display + NodeValue<V>,
-        P: Copy + fmt::Display + NodeValue<P>,
+        V: Copy + fmt::Display + NodeValue,
+        P: Copy + fmt::Display + NodeValue,
         L: BlockLoader<P>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -233,10 +233,10 @@ impl<'a, K, V, P, L> fmt::Display for BtreeMap<'a, K, V, P, L>
 impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + NodeValue<V>,
+        V: Copy + Default + std::fmt::Display + NodeValue,
         K: Into<u64>,
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        P: NodeValue<P> + From<u64> + Into<u64>,
+        P: NodeValue + From<u64> + Into<u64>,
         L: BlockLoader<P>,
 {
     #[inline]
@@ -1024,10 +1024,10 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
 impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + NodeValue<V>,
+        V: Copy + Default + std::fmt::Display + NodeValue,
         K: Into<u64>,
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        P: NodeValue<P> + From<u64> + Into<u64>,
+        P: NodeValue + From<u64> + Into<u64>,
         L: BlockLoader<P>,
 {
     fn op_insert(&self, path: &BtreePath<'_, K, V, P>, level: BtreeLevel, key: &mut K, val: &mut V, pid: &mut P) {
@@ -1380,10 +1380,10 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
 impl<'a, K, V, P, L> VMap<K, V> for BtreeMap<'a, K, V, P, L>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        V: Copy + Default + std::fmt::Display + NodeValue<V>,
+        V: Copy + Default + std::fmt::Display + NodeValue,
         K: Into<u64>,
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
-        P: NodeValue<P> + From<u64> + Into<u64>,
+        P: NodeValue + From<u64> + Into<u64>,
         L: BlockLoader<P>,
 {
     #[maybe_async::maybe_async]
