@@ -1035,7 +1035,7 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
             // non root node
             let node = path.get_nonroot_node(level);
 
-            if node.is_leaf() {
+            if level == BTREE_NODE_LEVEL_LEAF {
                 node.insert(path.get_index(level), key, val);
             } else {
                 node.insert(path.get_index(level), key, pid);
@@ -1049,7 +1049,11 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
         } else {
             // root node
             let root = self.get_root_node();
-            root.insert(path.get_index(level), key, pid);
+            if level == BTREE_NODE_LEVEL_LEAF {
+                root.insert(path.get_index(level), key, val);
+            } else {
+                root.insert(path.get_index(level), key, pid);
+            }
         }
     }
 
@@ -1326,7 +1330,7 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
     fn op_delete(&self, path: &BtreePath<K, V, P>, level: BtreeLevel, key: &mut K, val: &mut V, pid: &mut P) {
         if self.is_nonroot_level(level) {
             let node = path.get_nonroot_node(level);
-            if node.is_leaf() {
+            if level == BTREE_NODE_LEVEL_LEAF {
                 node.delete(path.get_index(level), key, val);
             } else {
                 node.delete(path.get_index(level), key, pid);
@@ -1338,7 +1342,11 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
             }
         } else {
             let root = self.get_root_node();
-            root.delete(path.get_index(level), key, pid);
+            if level == BTREE_NODE_LEVEL_LEAF {
+                root.delete(path.get_index(level), key, val);
+            } else {
+                root.delete(path.get_index(level), key, pid);
+            }
         }
     }
 
