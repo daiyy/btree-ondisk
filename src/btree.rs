@@ -469,14 +469,19 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
         }
 
         let mut value = V::invalid_value();
+        let mut next_level_id = P::invalid_value();
 
         let (mut found, mut index) = root.lookup(key);
         // set invalid value when returned index out of root node capacity
-        let mut next_level_id = if index > root.get_capacity() - 1 {
-            P::invalid_value()
+        if index > root.get_capacity() - 1 {
+            // do nothing, next_level_id is init with invalid value
         } else {
-            *root.get_val::<P>(index)
-        };
+            if level == BTREE_NODE_LEVEL_MIN {
+                value = *root.get_val::<V>(index);
+            } else {
+                next_level_id = *root.get_val::<P>(index);
+            }
+        }
 
         path.set_index(level, index);
 
