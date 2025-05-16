@@ -639,8 +639,8 @@ impl<'a, K, V, P> fmt::Display for BtreeNode<'a, K, V, P>
         } else {
             write!(f, "===== dump btree node @{:?} id {} ====\n", self.header as *const NodeHeader, self.id())?;
         }
-        write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}\n",
-            self.header.flags, self.header.level, self.header.nchildren, self.capacity)?;
+        write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}, is leaf: {}\n",
+            self.header.flags, self.header.level, self.header.nchildren, self.capacity, self.is_leaf())?;
         for idx in 0..self.header.nchildren.into() {
             if self.is_leaf() {
                 write!(f, "{:3}   {:20}   {:20}\n", idx, self.get_key(idx), self.get_val::<K>(idx))?;
