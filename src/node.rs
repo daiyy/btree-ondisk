@@ -383,10 +383,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     pub fn init(&self, level: usize, nchild: usize) {
         if level == BTREE_NODE_LEVEL_LEAF {
-            self.set_large();
             self.set_leaf();
-        } else {
-            self.set_large();
         }
         self.set_level(level);
         self.set_nchild(nchild);
