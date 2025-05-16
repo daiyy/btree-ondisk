@@ -92,6 +92,7 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
                 old_kv.push((From::<u64>::from(i as u64), val));
             }
         }
+        let old_ud = direct.get_userdata();
 
         // create new btree map
         let mut v = Vec::with_capacity(data.len());
@@ -130,6 +131,7 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
             // create root node @level 1
             btree.root.set_nchild(0);
             btree.root.init_root(1, true);
+            btree.root.set_userdata(old_ud);
             let mut index = 0;
             for (k, v) in old_kv.into_iter() {
                 btree.root.insert(index, &k, &v);
@@ -166,6 +168,7 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
 
         btree.root.set_nchild(0);
         btree.root.init_root(2, true);
+        btree.root.set_userdata(old_ud);
         // root no more leaf
         btree.root.clear_leaf();
         btree.root.insert(0, &first_root_key, &last_seq);
@@ -179,7 +182,7 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
 
     #[maybe_async::maybe_async]
     async fn convert_to_direct(&mut self, _key: &K, input: &Vec<(K, V)>,
-            root_node_size: usize, last_seq: P, limit: usize, block_loader: L) -> Result<()> {
+            root_node_size: usize, user_data: u32, last_seq: P, limit: usize, block_loader: L) -> Result<()> {
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
         let direct = DirectMap {
@@ -205,6 +208,7 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
             marker_p: PhantomData,
         };
 
+        direct.root.set_userdata(user_data);
         for (k, v) in input {
             // convert key to u64 then to usize,
             // use key as index of direct node
@@ -390,10 +394,10 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
                     v.retain(|(_k, _)| _k != key);
                     #[cfg(feature = "rc")]
                     let _ = self.convert_to_direct(key, &v,
-                        btree.data.len(), btree.last_seq.take(), btree.get_cache_limit(), btree.block_loader.clone()).await?;
+                        btree.data.len(), btree.root.get_userdata(), btree.last_seq.take(), btree.get_cache_limit(), btree.block_loader.clone()).await?;
                     #[cfg(feature = "arc")]
                     let _ = self.convert_to_direct(key, &v,
-                        btree.data.len(), btree.last_seq.load(Ordering::SeqCst).into(), btree.get_cache_limit(), btree.block_loader.clone()).await?;
+                        btree.data.len(), btree.root.get_userdata(), btree.last_seq.load(Ordering::SeqCst).into(), btree.get_cache_limit(), btree.block_loader.clone()).await?;
                     return Ok(());
                 }
                 return btree.delete(key).await;
