@@ -341,7 +341,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
-        let ptr = self.ptr as *mut u8;
+        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
 
         let key_size = std::mem::size_of::<K>();
         let val_size = if self.get_level() == BTREE_NODE_LEVEL_LEAF {
@@ -362,7 +362,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         }
     }
 
-    #[inline]
+    //#[inline]
     // re-calc capacity and valptr based on X
     pub(crate) fn do_reinit<X>(&self) {
         let len = self.size;
@@ -371,18 +371,34 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
-        let ptr = self.ptr as *mut u8;
+        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
 
         let key_size = std::mem::size_of::<K>();
         let val_size = std::mem::size_of::<X>();
-        let capacity = (len - hdr_size) / (key_size + val_size);
+        let capacity: usize = (len - hdr_size) / (key_size + val_size);
+        println!("key size: {key_size}, val_size: {val_size}, capacity: {capacity}");
+        let _ = ptr::addr_of!(self) as *mut u8;
+        /*
+        println!("ptr of header: {:?}, ptr of header flag: {:?}", header_ptr, ptr);
+        println!("ptr of self: {:p}, ptr of capacity: {:p}", &self, &self.capacity);
+        println!("ptr of self: {:?}, ptr of capacity: {:?}", ptr::addr_of!(self), ptr::addr_of!(self.capacity));
+        println!("ptr of self: {:?}, ptr of capacity: {:?}", ptr::addr_of!(self), ptr::addr_of!(self.capacity) as *mut usize);
+        */
+        // while this line print out, it works !!
+        println!("ptr of capacity: {:?}", ptr::addr_of!(self));
+        unsafe {
+            let ptr = ptr::addr_of!(capacity) as *const usize;
+            let cap_ptr = ptr::addr_of!(self.capacity) as *mut usize;
+            ptr::copy_nonoverlapping::<usize>(ptr, cap_ptr, 1);
+            //ptr::write_unaligned(ptr::addr_of!(self.capacity) as *mut usize, capacity);
+        }
+        println!("capacity {}", self.capacity);
 
         unsafe {
             let keymap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity);
             ptr::copy_nonoverlapping::<&mut [K]>(ptr::addr_of!(keymap), ptr::addr_of!(self.keymap) as *mut _, 1);
             let valptr = ptr.add(hdr_size + capacity * key_size);
             ptr::copy_nonoverlapping::<*mut u8>(ptr::addr_of!(valptr), ptr::addr_of!(self.valptr) as *mut _, 1);
-            ptr::copy_nonoverlapping::<usize>(ptr::addr_of!(capacity), ptr::addr_of!(self.capacity) as *mut _, 1);
         }
     }
 

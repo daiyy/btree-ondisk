@@ -179,7 +179,10 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
         btree.root.set_userdata(old_ud);
         // root no more leaf
         btree.root.clear_leaf();
+        println!("## 1 {} - {} ", first_root_key, last_seq);
+        println!("## {}", btree.root);
         btree.root.insert::<P>(0, &first_root_key, &last_seq);
+        println!("## 2");
 
         }
 
