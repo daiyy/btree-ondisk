@@ -376,7 +376,7 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
         }
         drop(list);
 
-        if let Some(mut node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) {
+        if let Some(node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) {
             #[cfg(not(feature = "sync-api"))]
             let more = self.meta_block_loader(*id, node.as_mut()).await?;
             #[cfg(feature = "sync-api")]
@@ -419,7 +419,7 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
 
     pub(crate) fn get_new_node(&self, id: &P, level: usize) -> Result<BtreeNodeRef<'a, K, V, P>> {
         let mut list = self.nodes.borrow_mut();
-        if let Some(mut node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) {
+        if let Some(node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) {
             if level == BTREE_NODE_LEVEL_LEAF {
                 node.do_reinit::<V>();
             } else {

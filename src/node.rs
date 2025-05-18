@@ -334,7 +334,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     // re-calc capacity and valptr by flags
-    pub(crate) fn do_update(&mut self) {
+    pub(crate) fn do_update(&self) {
         let len = self.size;
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
@@ -353,15 +353,18 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         };
         let capacity = (len - hdr_size) / (key_size + val_size);
 
-        self.valptr = unsafe {
-            ptr.add(hdr_size + capacity * key_size)
-        };
-        self.capacity = capacity;
+        unsafe {
+            let keymap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity);
+            ptr::copy_nonoverlapping::<&mut [K]>(ptr::addr_of!(keymap), ptr::addr_of!(self.keymap) as *mut _, 1);
+            let valptr = ptr.add(hdr_size + capacity * key_size);
+            ptr::copy_nonoverlapping::<*mut u8>(ptr::addr_of!(valptr), ptr::addr_of!(self.valptr) as *mut _, 1);
+            ptr::copy_nonoverlapping::<usize>(ptr::addr_of!(capacity), ptr::addr_of!(self.capacity) as *mut _, 1);
+        }
     }
 
     #[inline]
     // re-calc capacity and valptr based on X
-    pub(crate) fn do_reinit<X>(&mut self) {
+    pub(crate) fn do_reinit<X>(&self) {
         let len = self.size;
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
@@ -374,10 +377,13 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         let val_size = std::mem::size_of::<X>();
         let capacity = (len - hdr_size) / (key_size + val_size);
 
-        self.valptr = unsafe {
-            ptr.add(hdr_size + capacity * key_size)
-        };
-        self.capacity = capacity;
+        unsafe {
+            let keymap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity);
+            ptr::copy_nonoverlapping::<&mut [K]>(ptr::addr_of!(keymap), ptr::addr_of!(self.keymap) as *mut _, 1);
+            let valptr = ptr.add(hdr_size + capacity * key_size);
+            ptr::copy_nonoverlapping::<*mut u8>(ptr::addr_of!(valptr), ptr::addr_of!(self.valptr) as *mut _, 1);
+            ptr::copy_nonoverlapping::<usize>(ptr::addr_of!(capacity), ptr::addr_of!(self.capacity) as *mut _, 1);
+        }
     }
 
     #[inline]
