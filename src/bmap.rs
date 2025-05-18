@@ -150,8 +150,14 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
 
         let node = btree.get_new_node(&last_seq, 1)?;
         node.init(1, 0);
-        // save first key
-        first_root_key = old_kv[0].0;
+
+        // if value is too large for root node
+        if old_kv.len() == 0 && btree.root.get_capacity() == 0 { 
+            first_root_key = 0.into();
+        } else {
+            // save first key
+            first_root_key = old_kv[0].0;
+        }
         let mut index = 0;
         for (k, v) in old_kv.into_iter() {
             node.insert::<V>(index, &k, &v);
@@ -166,12 +172,14 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
         // create root node @level 2
         {
 
+        // btree root node was V, now init it to P
+        btree.root.do_reinit::<P>();
         btree.root.set_nchild(0);
         btree.root.init_root(2, true);
         btree.root.set_userdata(old_ud);
         // root no more leaf
         btree.root.clear_leaf();
-        btree.root.insert(0, &first_root_key, &last_seq);
+        btree.root.insert::<P>(0, &first_root_key, &last_seq);
 
         }
 
