@@ -341,7 +341,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
-        let ptr = self.ptr as *mut u8;
+        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
 
         let key_size = std::mem::size_of::<K>();
         let val_size = if self.get_level() == BTREE_NODE_LEVEL_LEAF {
@@ -353,6 +353,9 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         };
         let capacity = (len - hdr_size) / (key_size + val_size);
 
+        self.keymap = unsafe {
+            std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity)
+        };
         self.valptr = unsafe {
             ptr.add(hdr_size + capacity * key_size)
         };
@@ -368,12 +371,15 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
-        let ptr = self.ptr as *mut u8;
+        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
 
         let key_size = std::mem::size_of::<K>();
         let val_size = std::mem::size_of::<X>();
         let capacity = (len - hdr_size) / (key_size + val_size);
 
+        self.keymap = unsafe {
+            std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity)
+        };
         self.valptr = unsafe {
             ptr.add(hdr_size + capacity * key_size)
         };
