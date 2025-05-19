@@ -100,7 +100,7 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
         v.resize(data.len(), 0);
         // init flags with leaf and large
         v[0] = BTREE_NODE_FLAG_LEAF | BTREE_NODE_FLAG_LARGE;
-        let btree = BtreeMap {
+        let mut btree = BtreeMap {
             #[cfg(feature = "rc")]
             root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&v))),
             #[cfg(feature = "arc")]
@@ -150,8 +150,14 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
 
         let node = btree.get_new_node(&last_seq, 1)?;
         node.init(1, 0);
-        // save first key
-        first_root_key = old_kv[0].0;
+
+        // if value is too large for root node
+        if old_kv.len() == 0 && btree.root.get_capacity() == 0 {
+            first_root_key = key;
+        } else {
+            // save first key
+            first_root_key = old_kv[0].0;
+        }
         let mut index = 0;
         for (k, v) in old_kv.into_iter() {
             node.insert::<V>(index, &k, &v);
@@ -166,12 +172,22 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
         // create root node @level 2
         {
 
+        // btree root node was V, now init it to P
+        #[cfg(feature = "rc")]
+        let Some(root) = std::rc::Rc::get_mut(&mut btree.root) else {
+            panic!("failed to get rc of btree root");
+        };
+        #[cfg(feature = "arc")]
+        let Some(root) = std::sync::Arc::get_mut(&mut btree.root) else {
+            panic!("failed to get arc of btree root");
+        };
+        root.do_reinit::<P>();
         btree.root.set_nchild(0);
         btree.root.init_root(2, true);
         btree.root.set_userdata(old_ud);
         // root no more leaf
         btree.root.clear_leaf();
-        btree.root.insert(0, &first_root_key, &last_seq);
+        btree.root.insert::<P>(0, &first_root_key, &last_seq);
 
         }
 
