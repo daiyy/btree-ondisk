@@ -207,6 +207,10 @@ impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
     #[maybe_async::maybe_async]
     async fn lookup(&self, key: &K, level: usize) -> Result<V> {
         let index = (*key).into() as usize;
+        if self.root.get_capacity() == 0 {
+            // handle case if root node is too small for a V
+            return Err(Error::new(ErrorKind::NotFound, "direct node not eligible for lookup"));
+        }
         if index > self.root.get_capacity() - 1 || level != 1 {
             return Err(Error::new(ErrorKind::NotFound, "lookup key exceed direct node space"));
         }

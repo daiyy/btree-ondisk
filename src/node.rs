@@ -300,6 +300,15 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     }
 
     #[inline]
+    // dynamic calc V capacity
+    pub fn get_v_capacity(&self) -> usize {
+        let hdr_size = std::mem::size_of::<NodeHeader>();
+        let key_size = std::mem::size_of::<K>();
+        let val_size = std::mem::size_of::<V>();
+        (self.size - hdr_size) / (key_size + val_size)
+    }
+
+    #[inline]
     pub fn has_free_slots(&self) -> bool {
         self.get_nchild() < self.capacity
     }

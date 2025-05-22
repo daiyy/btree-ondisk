@@ -690,7 +690,16 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
                 }
             } else {
                 // no siblings, the only child of the root node
-                if node.get_nchild() - 1 <= self.get_root_node().get_capacity() {
+                let root = self.get_root_node();
+                let root_capacity = if node.get_level() == BTREE_NODE_LEVEL_LEAF {
+                    // if node is leaf and root level is leaf + 1
+                    // use v capacity for root to check
+                    // if we can shrink leaf node into root node
+                    root.get_v_capacity()
+                } else {
+                    root.get_capacity()
+                };
+                if node.get_nchild() - 1 <= root_capacity {
                     path.set_op(level, BtreeMapOp::Shrink);
                     level += 1;
                     path.set_op(level, BtreeMapOp::Nop);
