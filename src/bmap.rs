@@ -134,10 +134,10 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
             btree.root.set_userdata(old_ud);
             let mut index = 0;
             for (k, v) in old_kv.into_iter() {
-                btree.root.insert(index, &k, &v);
+                btree.root.insert::<V>(index, &k, &v);
                 index += 1;
             }
-            btree.root.insert(index, &key, &val);
+            btree.root.insert::<V>(index, &key, &val);
 
             // modify inner
             self.inner = NodeType::Btree(btree);
