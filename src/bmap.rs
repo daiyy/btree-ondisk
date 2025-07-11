@@ -17,7 +17,10 @@ use crate::VMap;
 use crate::{NodeValue, BlockLoader};
 use crate::direct::DirectMap;
 use crate::btree::BtreeMap;
-use crate::node::{BtreeNode, DirectNode, BTREE_NODE_FLAG_LEAF, BTREE_NODE_FLAG_LARGE};
+use crate::node::{
+    BtreeNode, DirectNode,
+    BTREE_NODE_FLAG_LEAF, BTREE_NODE_FLAG_LARGE, BTREE_NODE_LEVEL_MIN
+};
 use crate::btree::{BtreeNodeRef, BtreeNodeDirty};
 
 #[derive(Default, Debug)]
@@ -871,7 +874,7 @@ impl<'a, 'b, K, V, P, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L>
                     let node = BtreeNode::<K, V, P>::from_slice(self.bmap.as_slice());
                     let id = *node.get_val::<P>(idx);
                     assert!(!id.is_invalid());
-                    if node.get_level() >= 2 {
+                    if node.get_level() > BTREE_NODE_LEVEL_MIN {
                         // for L1 node, we don't need to fetch actual data block
                         // so we limit condition for fetch next level node here to >= 2
                         #[cfg(not(feature = "sync-api"))]
@@ -903,7 +906,7 @@ impl<'a, 'b, K, V, P, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L>
                 // try working on one intermediate node
                 let id = *node.get_val::<P>(self.last_btree_node_index);
                 assert!(!id.is_invalid());
-                if node.get_level() >= 2 {
+                if node.get_level() > BTREE_NODE_LEVEL_MIN {
                     // for L1 node, we don't need to fetch actual data block
                     // so we limit condition for fetch next level node here to >= 2
                     #[cfg(not(feature = "sync-api"))]
