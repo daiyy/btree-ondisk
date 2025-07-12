@@ -379,8 +379,12 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
         if let Some(mut node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) {
             #[cfg(not(feature = "sync-api"))]
             let more = self.meta_block_loader(*id, node.as_mut()).await?;
-            #[cfg(feature = "sync-api")]
+            #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
             let more = futures::executor::block_on(async {
+                self.meta_block_loader(*id, node.as_mut()).await
+            })?;
+            #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
+            let more = tokio::runtime::Handle::current().block_on(async {
                 self.meta_block_loader(*id, node.as_mut()).await
             })?;
             node.do_update();

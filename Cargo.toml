@@ -16,7 +16,8 @@ repository = "https://github.com/daiyy/btree-ondisk"
 log = "0.4.21"
 env_logger = "0.11.3"
 atomic_refcell = { version = "0.1.13", optional = true }
-futures = "0.3.31"
+futures = { version = "0.3.31", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
 maybe-async = "0.2.10"
 
 [dev-dependencies]
@@ -29,12 +30,14 @@ rand = "0.8.5"
 clap = { version = "4.5.38", features = ["derive"] }
 
 [features]
-default = ["rc", "value-check"]
+default = ["rc", "value-check", "tokio-runtime"]
 rc = []
 value-check = []
 arc = ["atomic_refcell"]
 sync-api = ["maybe-async/is_sync"]
 mt = []
+tokio-runtime = ["dep:tokio"]
+futures-runtime = ["dep:futures"]
 
 [[example]]
 name = "mt-rc"

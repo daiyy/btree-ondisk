@@ -877,8 +877,12 @@ impl<'a, 'b, K, V, P, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L>
                     if node.get_level() > BTREE_NODE_LEVEL_MIN {
                         // for L1 node, we don't need to fetch actual data block
                         // so we limit condition for fetch next level node here to >= 2
-                        #[cfg(not(feature = "sync-api"))]
+                        #[cfg(all(not(feature = "sync-api"), feature = "futures-runtime"))]
                         let node_ref = futures::executor::block_on(async {
+                            btree.get_from_nodes(&id).await.unwrap_or_else(|_| panic!("failed to fetch node {id}"))
+                        });
+                        #[cfg(all(not(feature = "sync-api"), feature = "tokio-runtime"))]
+                        let node_ref = tokio::runtime::Handle::current().block_on(async {
                             btree.get_from_nodes(&id).await.unwrap_or_else(|_| panic!("failed to fetch node {id}"))
                         });
                         #[cfg(feature = "sync-api")]
@@ -909,8 +913,12 @@ impl<'a, 'b, K, V, P, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L>
                 if node.get_level() > BTREE_NODE_LEVEL_MIN {
                     // for L1 node, we don't need to fetch actual data block
                     // so we limit condition for fetch next level node here to >= 2
-                    #[cfg(not(feature = "sync-api"))]
+                    #[cfg(all(not(feature = "sync-api"), feature = "futures-runtime"))]
                     let node_ref = futures::executor::block_on(async {
+                        btree.get_from_nodes(&id).await.unwrap_or_else(|_| panic!("failed to fetch node {id}"))
+                    });
+                    #[cfg(all(not(feature = "sync-api"), feature = "tokio-runtime"))]
+                    let node_ref = tokio::runtime::Handle::current().block_on(async {
                         btree.get_from_nodes(&id).await.unwrap_or_else(|_| panic!("failed to fetch node {id}"))
                     });
                     #[cfg(feature = "sync-api")]
