@@ -19,6 +19,7 @@ atomic_refcell = { version = "0.1.13", optional = true }
 futures = { version = "0.3.31", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 maybe-async = "0.2.10"
+foyer = "0.19.2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
