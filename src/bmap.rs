@@ -14,7 +14,7 @@ use std::marker::PhantomData;
 use std::io::{Result, ErrorKind};
 use std::any::Any;
 use crate::VMap;
-use crate::{NodeValue, BlockLoader};
+use crate::{NodeValue, BlockLoader, NodeCache};
 use crate::direct::DirectMap;
 use crate::btree::BtreeMap;
 use crate::node::{
@@ -33,17 +33,18 @@ pub struct BMapStat {
     pub nodes_l1: usize,
 }
 
-pub enum NodeType<'a, K, V, P, L: BlockLoader<P>> {
+pub enum NodeType<'a, K, V, P, L: BlockLoader<P>, C: NodeCache<P>> {
     Direct(DirectMap<'a, K, V, P>),
-    Btree(BtreeMap<'a, K, V, P, L>),
+    Btree(BtreeMap<'a, K, V, P, L, C>),
 }
 
-impl<'a, K, V, P, L> fmt::Display for NodeType<'a, K, V, P, L>
+impl<'a, K, V, P, L, C> fmt::Display for NodeType<'a, K, V, P, L, C>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
         V: Copy + fmt::Display + NodeValue,
         P: Copy + fmt::Display + NodeValue,
-        L: BlockLoader<P>
+        L: BlockLoader<P>,
+        C: NodeCache<P>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -57,25 +58,27 @@ impl<'a, K, V, P, L> fmt::Display for NodeType<'a, K, V, P, L>
     }
 }
 
-pub struct BMap<'a, K, V, P, L: BlockLoader<P>> {
-    inner: NodeType<'a, K, V, P, L>,
+pub struct BMap<'a, K, V, P, L: BlockLoader<P>, C: NodeCache<P>> {
+    inner: NodeType<'a, K, V, P, L, C>,
     meta_block_size: usize,
     block_loader: Option<L>,
+    node_tiered_cache: Option<C>,
 }
 
-impl<'a, K, V, P, L> fmt::Display for BMap<'a, K, V, P, L>
+impl<'a, K, V, P, L, C> fmt::Display for BMap<'a, K, V, P, L, C>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
         V: Copy + fmt::Display + NodeValue,
         P: Copy + fmt::Display + NodeValue,
-        L: BlockLoader<P>
+        L: BlockLoader<P>,
+        C: NodeCache<P>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.inner)
     }
 }
 
-impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
+impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + NodeValue,
@@ -83,6 +86,7 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         P: NodeValue + Into<u64> + From<u64>,
         L: BlockLoader<P>,
+        C: NodeCache<P>,
 {
     #[maybe_async::maybe_async]
     async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: P, limit: usize, key: K, val: V) -> Result<()> {
@@ -117,6 +121,7 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
             dirty: RefCell::new(true),
             #[cfg(feature = "arc")]
             nodes: AtomicRefCell::new(HashMap::new()),
+            node_tiered_cache: self.node_tiered_cache.take().unwrap(),
             #[cfg(feature = "arc")]
             last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(last_seq))),
             #[cfg(feature = "arc")]
@@ -201,7 +206,7 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
 
     #[maybe_async::maybe_async]
     async fn convert_to_direct(&mut self, _key: &K, input: &Vec<(K, V)>,
-            root_node_size: usize, user_data: u32, last_seq: P, limit: usize, block_loader: L) -> Result<()> {
+            root_node_size: usize, user_data: u32, last_seq: P, limit: usize, block_loader: L, node_tiered_cache: C) -> Result<()> {
         let mut v = Vec::with_capacity(root_node_size);
         v.resize(root_node_size, 0);
         let direct = DirectMap {
@@ -236,12 +241,13 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
         }
 
         self.block_loader = Some(block_loader);
+        self.node_tiered_cache = Some(node_tiered_cache);
         self.inner = NodeType::Direct(direct);
         Ok(())
     }
 }
 
-impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
+impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + NodeValue + Any,
@@ -249,10 +255,11 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         P: NodeValue + From<u64> + Into<u64> + Any,
         L: BlockLoader<P> + Clone,
+        C: NodeCache<P> + Clone,
 {
     /// Constructs a map start from empty direct node.
     // start from a direct node at level 1 with no entries
-    pub fn new(root_node_size: usize, meta_block_size: usize, block_loader: L) -> Self {
+    pub fn new(root_node_size: usize, meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Self {
         if root_node_size > (meta_block_size / 2) {
             panic!("root node size {} is too large, reduce to {} at least, which is half of meta block size",
                 root_node_size, meta_block_size / 2);
@@ -269,28 +276,31 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
             inner: NodeType::Direct(DirectMap::<K, V, P>::new(&data)),
             meta_block_size: meta_block_size,
             block_loader: Some(block_loader),
+            node_tiered_cache: Some(node_tiered_cache),
         }
     }
 
     /// Constructs a new direct map from data slice.
     ///
     /// Data will be copied into internal buffer.
-    pub fn new_direct(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
+    pub fn new_direct(data: &[u8], meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Self {
         Self {
             inner: NodeType::Direct(DirectMap::<K, V, P>::new(data)),
             meta_block_size: meta_block_size,
             block_loader: Some(block_loader),
+            node_tiered_cache: Some(node_tiered_cache),
         }
     }
 
     /// Constructs a new btree map from data slice.
     ///
     /// Data will be copied into internal buffer.
-    pub fn new_btree(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
+    pub fn new_btree(data: &[u8], meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Self {
         Self {
-            inner: NodeType::Btree(BtreeMap::<K, V, P, L>::new(data, meta_block_size, block_loader)),
+            inner: NodeType::Btree(BtreeMap::<K, V, P, L, C>::new(data, meta_block_size, block_loader, node_tiered_cache)),
             meta_block_size: meta_block_size,
             block_loader: None,
+            node_tiered_cache: None,
         }
     }
 
@@ -413,10 +423,12 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
                     v.retain(|(_k, _)| _k != key);
                     #[cfg(feature = "rc")]
                     let _ = self.convert_to_direct(key, &v,
-                        btree.data.len(), btree.root.get_userdata(), btree.last_seq.take(), btree.get_cache_limit(), btree.block_loader.clone()).await?;
+                        btree.data.len(), btree.root.get_userdata(), btree.last_seq.take(), btree.get_cache_limit(),
+                            btree.block_loader.clone(), btree.node_tiered_cache.clone()).await?;
                     #[cfg(feature = "arc")]
                     let _ = self.convert_to_direct(key, &v,
-                        btree.data.len(), btree.root.get_userdata(), btree.last_seq.load(Ordering::SeqCst).into(), btree.get_cache_limit(), btree.block_loader.clone()).await?;
+                        btree.data.len(), btree.root.get_userdata(), btree.last_seq.load(Ordering::SeqCst).into(), btree.get_cache_limit(),
+                            btree.block_loader.clone(), btree.node_tiered_cache.clone()).await?;
                     return Ok(());
                 }
                 return btree.delete(key).await;
@@ -717,12 +729,12 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
     }
 
     /// Read in root node from extenal buffer.
-    pub fn read(buf: &[u8], meta_block_size: usize, block_loader: L) -> Self {
+    pub fn read(buf: &[u8], meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Self {
         let root = BtreeNode::<K, V, P>::from_slice(buf);
         if root.is_large() {
-            return Self::new_btree(buf, meta_block_size, block_loader);
+            return Self::new_btree(buf, meta_block_size, block_loader, node_tiered_cache);
         }
-        return Self::new_direct(buf, meta_block_size, block_loader);
+        return Self::new_direct(buf, meta_block_size, block_loader, node_tiered_cache);
     }
 
     /// Write out root node to external buffer.
@@ -793,7 +805,7 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
     }
 
     /// Return iterator for all non-leaf node which including root node
-    pub fn nonleafnode_iter<'b>(&'b self) -> NonLeafNodeIter<'a, 'b, K, V, P, L> {
+    pub fn nonleafnode_iter<'b>(&'b self) -> NonLeafNodeIter<'a, 'b, K, V, P, L, C> {
         NonLeafNodeIter::new(self)
     }
 
@@ -811,8 +823,8 @@ impl<'a, K, V, P, L> BMap<'a, K, V, P, L>
     }
 }
 
-pub struct NonLeafNodeIter<'a, 'b, K, V, P, L: BlockLoader<P>> {
-    bmap: &'b BMap<'a, K, V, P, L>,
+pub struct NonLeafNodeIter<'a, 'b, K, V, P, L: BlockLoader<P>, C: NodeCache<P>> {
+    bmap: &'b BMap<'a, K, V, P, L, C>,
     last_root_node_index: usize,
     root_node_cap_or_nchild: usize,
     last_btree_node_index: usize,
@@ -820,7 +832,7 @@ pub struct NonLeafNodeIter<'a, 'b, K, V, P, L: BlockLoader<P>> {
     btree_node_backlog: VecDeque<BtreeNodeRef<'a, K, V, P>>,
 }
 
-impl<'a, 'b, K, V, P, L> NonLeafNodeIter<'a, 'b, K, V, P, L>
+impl<'a, 'b, K, V, P, L, C> NonLeafNodeIter<'a, 'b, K, V, P, L, C>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + NodeValue + Any,
@@ -828,8 +840,9 @@ impl<'a, 'b, K, V, P, L> NonLeafNodeIter<'a, 'b, K, V, P, L>
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64> + NodeValue,
         P: From<u64> + Into<u64> + Any,
         L: BlockLoader<P> + Clone,
+        C: NodeCache<P> + Clone,
 {
-    fn new(bmap: &'b BMap<'a, K, V, P, L>) -> Self {
+    fn new(bmap: &'b BMap<'a, K, V, P, L, C>) -> Self {
         let root = BtreeNode::<K, V, P>::from_slice(bmap.as_slice());
         let root_node_cap_or_nchild = if root.is_large() {
             root.get_nchild()
@@ -850,7 +863,7 @@ impl<'a, 'b, K, V, P, L> NonLeafNodeIter<'a, 'b, K, V, P, L>
 }
 
 /// Iterate all values of intermediate nodes from highest level to level 1
-impl<'a, 'b, K, V, P, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L>
+impl<'a, 'b, K, V, P, L, C> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L, C>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + NodeValue + Any,
@@ -858,6 +871,7 @@ impl<'a, 'b, K, V, P, L> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L>
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64> + NodeValue,
         P: From<u64> + Into<u64> + Any,
         L: BlockLoader<P> + Clone,
+        C: NodeCache<P> + Clone,
 {
     type Item = P;
 
