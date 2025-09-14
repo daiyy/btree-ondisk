@@ -65,8 +65,9 @@ impl<'a> MemoryFile<'a> {
         // verify by read
         let _ = self.read(blk_idx).await;
 
-        let res = self.bmap.try_insert(blk_idx, 0).await;
-        assert!(res.unwrap_err().kind() == ErrorKind::AlreadyExists);
+        // force update block index value if already exists
+        let res = self.bmap.insert(blk_idx, 0).await;
+        assert!(res.unwrap().is_some());
         let res = self.data_blocks_tracker.insert(blk_idx, 0);
         assert!(res.is_some());
         // update dirty list

@@ -121,8 +121,9 @@ impl<'a, const N: usize> MemoryFile<'a, N> {
         let _ = self.read(blk_idx).await;
 
         let v = CustomValue::random_value();
-        let res = self.bmap.try_insert(blk_idx, v).await;
-        assert!(res.unwrap_err().kind() == ErrorKind::AlreadyExists);
+        // force update block index value if already exists
+        let res = self.bmap.insert(blk_idx, v).await;
+        assert!(res.unwrap().is_some());
         let res = self.kv_tracker.insert(blk_idx, v);
         assert!(res.is_some());
         // update dirty list
