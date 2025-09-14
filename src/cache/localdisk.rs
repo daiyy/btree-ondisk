@@ -1,4 +1,5 @@
 use std::io::{Error, ErrorKind, Result};
+use std::sync::atomic::Ordering;
 use std::path::Path;
 use foyer::{
     HybridCacheBuilder, HybridCache,
@@ -6,20 +7,24 @@ use foyer::{
     HybridCachePolicy,
 };
 use crate::NodeCache;
+use super::NodeTieredCacheStats;
 
 #[derive(Clone)]
 pub struct LocalDiskNodeCache {
     hybrid: HybridCache<u64, Vec<u8>>,
+    stats: NodeTieredCacheStats,
 }
 
 impl<P: Copy + Into<u64>> NodeCache<P> for LocalDiskNodeCache {
     fn push(&self, p: &P, data: &[u8]) {
         let key = (*p).into();
+        self.stats.total_push.fetch_add(1, Ordering::SeqCst);
         self.hybrid.insert(key, data.to_vec());
     }
 
     async fn load(&self, p: &P, data: &mut [u8]) -> Result<bool> {
         let key = (*p).into();
+        self.stats.total_load.fetch_add(1, Ordering::SeqCst);
         match self.hybrid.get(&key).await
                 .map_err(|e| {
                     let err_msg = format!("{}", e);
@@ -27,6 +32,7 @@ impl<P: Copy + Into<u64>> NodeCache<P> for LocalDiskNodeCache {
                 })?
         {
             Some(entry) => {
+                self.stats.total_hit.fetch_add(1, Ordering::SeqCst);
                 data.copy_from_slice(&entry.value());
                 Ok(true)
             },
@@ -38,11 +44,16 @@ impl<P: Copy + Into<u64>> NodeCache<P> for LocalDiskNodeCache {
     
     fn invalid(&self, p: &P) {
         let key = (*p).into();
+        self.stats.total_remove.fetch_add(1, Ordering::SeqCst);
         self.hybrid.remove(&key);
     }
 
     fn evict(&self) {
         self.hybrid.memory().evict_all();
+    }
+
+    fn get_stats(&self) -> NodeTieredCacheStats {
+        self.stats.clone()
     }
 }
 
@@ -65,6 +76,7 @@ impl LocalDiskNodeCache {
 
         Self {
             hybrid,
+            stats: NodeTieredCacheStats::default(),
         }
     }
 

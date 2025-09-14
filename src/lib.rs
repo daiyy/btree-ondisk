@@ -100,4 +100,5 @@ pub trait NodeCache<P> {
     fn load(&self, p: &P, data: &mut [u8]) -> impl std::future::Future<Output = Result<bool>>;
     fn invalid(&self, p: &P);
     fn evict(&self);
+    fn get_stats(&self) -> cache::NodeTieredCacheStats;
 }

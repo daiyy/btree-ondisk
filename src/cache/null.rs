@@ -1,5 +1,6 @@
 use std::io::Result;
 use crate::NodeCache;
+use super::NodeTieredCacheStats;
 
 #[derive(Clone)]
 pub struct NullNodeCache;
@@ -16,5 +17,9 @@ impl<P> NodeCache<P> for NullNodeCache {
     }
 
     fn evict(&self) {
+    }
+
+    fn get_stats(&self) -> NodeTieredCacheStats {
+        NodeTieredCacheStats::default()
     }
 }

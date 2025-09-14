@@ -22,6 +22,7 @@ use crate::node::{
     BTREE_NODE_FLAG_LEAF, BTREE_NODE_FLAG_LARGE, BTREE_NODE_LEVEL_MIN
 };
 use crate::btree::{BtreeNodeRef, BtreeNodeDirty};
+use crate::cache::NodeTieredCacheStats;
 
 #[derive(Default, Debug)]
 pub struct BMapStat {
@@ -31,6 +32,7 @@ pub struct BMapStat {
     pub meta_block_size: usize,
     pub nodes_total: usize,
     pub nodes_l1: usize,
+    pub cache_stats: NodeTieredCacheStats,
 }
 
 pub enum NodeType<'a, K, V, P, L: BlockLoader<P>, C: NodeCache<P>> {

@@ -1025,6 +1025,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             meta_block_size: self.meta_block_size,
             nodes_total: self.nodes.borrow().len() + 1, // plus root node
             nodes_l1: l1,
+            cache_stats: self.node_tiered_cache.get_stats(),
         }
     }
 
