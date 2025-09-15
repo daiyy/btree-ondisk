@@ -15,7 +15,7 @@ use log::{warn, debug};
 use crate::node::*;
 use crate::VMap;
 use crate::bmap::BMapStat;
-use crate::{NodeValue, BlockLoader};
+use crate::{NodeValue, BlockLoader, NodeCache};
 use crate::DEFAULT_CACHE_UNLIMITED;
 
 pub(crate) type BtreeLevel = usize;
@@ -190,10 +190,11 @@ impl<'a, K, V, P> BtreePath<'a, K, V, P>
 }
 
 #[cfg(feature = "rc")]
-pub struct BtreeMap<'a, K, V, P, L: BlockLoader<P>> {
+pub struct BtreeMap<'a, K, V, P, L: BlockLoader<P>, C: NodeCache<P>> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V, P>,
     pub nodes: RefCell<HashMap<P, BtreeNodeRef<'a, K, V, P>>>, // list of btree node in memory
+    pub node_tiered_cache: C,
     pub last_seq: RefCell<P>,
     pub dirty: RefCell<bool>,
     pub meta_block_size: usize,
@@ -202,10 +203,11 @@ pub struct BtreeMap<'a, K, V, P, L: BlockLoader<P>> {
 }
 
 #[cfg(feature = "arc")]
-pub struct BtreeMap<'a, K, V, P, L: BlockLoader<P>> {
+pub struct BtreeMap<'a, K, V, P, L: BlockLoader<P>, C: NodeCache<P>> {
     pub data: Vec<u8>,
     pub root: BtreeNodeRef<'a, K, V, P>,
     pub nodes: AtomicRefCell<HashMap<P, BtreeNodeRef<'a, K, V, P>>>,
+    pub node_tiered_cache: C,
     pub last_seq: Arc<AtomicU64>,
     pub dirty: Arc<AtomicBool>,
     pub meta_block_size: usize,
@@ -213,12 +215,13 @@ pub struct BtreeMap<'a, K, V, P, L: BlockLoader<P>> {
     pub block_loader: L,
 }
 
-impl<'a, K, V, P, L> fmt::Display for BtreeMap<'a, K, V, P, L>
+impl<'a, K, V, P, L, C> fmt::Display for BtreeMap<'a, K, V, P, L, C>
     where
         K: Copy + fmt::Display + std::cmp::PartialOrd,
         V: Copy + fmt::Display + NodeValue,
         P: Copy + fmt::Display + NodeValue,
         L: BlockLoader<P>,
+        C: NodeCache<P>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.root)?;
@@ -230,7 +233,7 @@ impl<'a, K, V, P, L> fmt::Display for BtreeMap<'a, K, V, P, L>
     }
 }
 
-impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
+impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + NodeValue,
@@ -238,6 +241,7 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         P: NodeValue + From<u64> + Into<u64>,
         L: BlockLoader<P>,
+        C: NodeCache<P>,
 {
     #[inline]
     fn get_root_node(&self) -> BtreeNodeRef<'a, K, V, P> {
@@ -377,6 +381,30 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
         drop(list);
 
         if let Some(mut node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) {
+            // try on tiered cache
+            #[cfg(not(feature = "sync-api"))]
+            let found = self.node_tiered_cache.load(id, node.as_mut()).await?;
+            #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
+            let found = futures::executor::block_on(async {
+                self.node_tiered_cache.load(id, node.as_mut()).await
+            })?;
+            #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
+            let found = tokio::runtime::Handle::current().block_on(async {
+                self.node_tiered_cache.load(id, node.as_mut()).await
+            })?;
+            if found {
+                node.do_update();
+                #[cfg(feature = "rc")]
+                let n = Rc::new(Box::new(node));
+                #[cfg(feature = "arc")]
+                let n = Arc::new(Box::new(node));
+                let mut list = self.nodes.borrow_mut();
+                list.insert(*id, n.clone());
+                drop(list);
+                return Ok(n);
+            }
+
+            // try on backend
             #[cfg(not(feature = "sync-api"))]
             let more = self.meta_block_loader(*id, node.as_mut()).await?;
             #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
@@ -444,6 +472,8 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
     fn remove_from_nodes(&self, node: BtreeNodeRef<K, V, P>) -> Result<()> {
         let n = self.nodes.borrow_mut().remove(node.id());
         assert!(n.is_some());
+        let node = n.unwrap();
+        self.node_tiered_cache.invalid(&node.id());
         Ok(())
     }
 
@@ -818,7 +848,11 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
                     .filter_map(|(key, node)| {
                         let id = node.id();
                         assert!(key == id);
-                        if id.is_valid_extern_assign() {
+                        if id.is_valid_extern_assign() || !node.is_dirty() {
+                            // skip node that:
+                            //   - is internally used (not yet assigned value)
+                            // or
+                            //   - is dirty
                             Some(node.clone())
                         } else {
                             None
@@ -845,8 +879,11 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
             let id = node.id();
             let n = self.nodes.borrow_mut().remove(&id);
             assert!(n.is_some());
+            let node = n.unwrap();
+            self.node_tiered_cache.push(&node.id(), node.as_ref().as_ref().as_ref());
             count -= 1;
         }
+        self.node_tiered_cache.evict();
     }
 
     #[maybe_async::maybe_async]
@@ -938,7 +975,7 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
         Ok(())
     }
 
-    pub(crate) fn new(data: &[u8], meta_block_size: usize, block_loader: L) -> Self {
+    pub(crate) fn new(data: &[u8], meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Self {
         let mut v = Vec::with_capacity(data.len());
         v.extend_from_slice(data);
         Self {
@@ -955,6 +992,7 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
             dirty: RefCell::new(false),
             #[cfg(feature = "arc")]
             nodes: AtomicRefCell::new(HashMap::new()),
+            node_tiered_cache: node_tiered_cache,
             #[cfg(feature = "arc")]
             last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(P::invalid_value()))),
             #[cfg(feature = "arc")]
@@ -987,6 +1025,7 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
             meta_block_size: self.meta_block_size,
             nodes_total: self.nodes.borrow().len() + 1, // plus root node
             nodes_l1: l1,
+            cache_stats: self.node_tiered_cache.get_stats(),
         }
     }
 
@@ -1039,7 +1078,7 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
 }
 
 // all op_* functions
-impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
+impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + NodeValue,
@@ -1047,6 +1086,7 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         P: NodeValue + From<u64> + Into<u64>,
         L: BlockLoader<P>,
+        C: NodeCache<P>,
 {
     fn op_insert(&self, path: &BtreePath<'_, K, V, P>, level: BtreeLevel, key: &mut K, val: &mut V, pid: &mut P) {
         if self.is_nonroot_level(level) {
@@ -1403,7 +1443,7 @@ impl<'a, K, V, P, L> BtreeMap<'a, K, V, P, L>
 }
 
 // all up level api
-impl<'a, K, V, P, L> VMap<K, V> for BtreeMap<'a, K, V, P, L>
+impl<'a, K, V, P, L, C> VMap<K, V> for BtreeMap<'a, K, V, P, L, C>
     where
         K: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         V: Copy + Default + std::fmt::Display + NodeValue,
@@ -1411,6 +1451,7 @@ impl<'a, K, V, P, L> VMap<K, V> for BtreeMap<'a, K, V, P, L>
         P: Copy + Default + std::fmt::Display + PartialOrd + Eq + std::hash::Hash + std::ops::AddAssign<u64>,
         P: NodeValue + From<u64> + Into<u64>,
         L: BlockLoader<P>,
+        C: NodeCache<P>,
 {
     #[maybe_async::maybe_async]
     async fn lookup(&self, key: &K, level: usize) -> Result<V> {

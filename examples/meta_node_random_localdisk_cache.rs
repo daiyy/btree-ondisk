@@ -3,13 +3,15 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use rand::Rng;
 use indicatif::{ProgressBar, ProgressStyle};
 use btree_ondisk::bmap::BMap;
-use btree_ondisk::{MemoryBlockLoader, NullNodeCache};
+use btree_ondisk::{MemoryBlockLoader, LocalDiskNodeCache, LocalDiskNodeCacheOpenMode};
 
 const VALID_EXTERNAL_ASSIGN_MASK: u64 = 0xFFFF_0000_0000_0000;
 const CACHE_LIMIT: usize = 10;
+const LOCALDISK_CACHE_DIR: &str = "/tmp/btree-ondisk-examples";
+const LOCALDISK_CACHE_LIMIT: usize = 512 * 1024 * 1024;
 
 struct MemoryFile<'a> {
-    bmap: BMap<'a, u64, u64, u64, MemoryBlockLoader<u64>, NullNodeCache>,
+    bmap: BMap<'a, u64, u64, u64, MemoryBlockLoader<u64>, LocalDiskNodeCache>,
     loader: MemoryBlockLoader<u64>,
     #[allow(dead_code)]
     data_block_size: usize,
@@ -21,9 +23,11 @@ struct MemoryFile<'a> {
 
 // impl a simple file in memory that don't actually read and write real data
 impl<'a> MemoryFile<'a> {
-    fn new(root_node_size: usize, meta_node_size: usize, data_block_size: usize, max_file_blk_idx: u64) -> Self {
+    async fn new(root_node_size: usize, meta_node_size: usize, data_block_size: usize, max_file_blk_idx: u64) -> Self {
         let loader = MemoryBlockLoader::new(data_block_size);
-        let bmap = BMap::<u64, u64, u64, MemoryBlockLoader<u64>, NullNodeCache>::new(root_node_size, meta_node_size, loader.clone(), NullNodeCache);
+        // dont't reuse cache
+        let cache = LocalDiskNodeCache::new(LOCALDISK_CACHE_DIR , LOCALDISK_CACHE_LIMIT, LocalDiskNodeCacheOpenMode::Recreate).await;
+        let bmap = BMap::<u64, u64, u64, MemoryBlockLoader<u64>, LocalDiskNodeCache>::new(root_node_size, meta_node_size, loader.clone(), cache);
         // limit max cached meta data nodes
         bmap.set_cache_limit(CACHE_LIMIT);
         Self {
@@ -65,7 +69,6 @@ impl<'a> MemoryFile<'a> {
         // verify by read
         let _ = self.read(blk_idx).await;
 
-        // force update block index value if already exists
         let res = self.bmap.insert(blk_idx, 0).await;
         assert!(res.unwrap().is_some());
         let res = self.data_blocks_tracker.insert(blk_idx, 0);
@@ -221,12 +224,12 @@ async fn run() -> Result<()> {
     let root_node_size = 56;
     let meta_node_size = 4096;
     let data_block_size = 4096;
-    // for 4KiB data block, it's about 20 PiB file size
-    let max_file_blk_idx = 5 * 1024 * 1024 * 1024 * 1024;
-    let mut file = MemoryFile::new(root_node_size, meta_node_size, data_block_size, max_file_blk_idx);
+    // for 4KiB data block, it's about 20 GiB file size
+    let max_file_blk_idx = 5 * 1024 * 1024;
+    let mut file = MemoryFile::new(root_node_size, meta_node_size, data_block_size, max_file_blk_idx).await;
 
     println!("=== random read/write/delete ===");
-    let iter = 1_000_000;
+    let iter = 10_000_000;
     rand_rwd(&mut file, iter).await;
     file.flush().await?;
     assert!(file.dirty_count() == 0);
@@ -242,7 +245,7 @@ async fn run() -> Result<()> {
     println!("");
 
     println!("=== random read/write/delete ===");
-    let iter = 100_000_000;
+    let iter = 10_000_000;
     rand_rwd(&mut file, iter).await;
     file.flush().await?;
     assert!(file.dirty_count() == 0);

@@ -24,8 +24,11 @@ mod direct;
 pub mod bmap;
 mod utils;
 mod loader;
+mod cache;
 pub use crate::loader::null::NullBlockLoader;
 pub use crate::loader::memory::MemoryBlockLoader;
+pub use crate::cache::null::NullNodeCache;
+pub use crate::cache::localdisk::{LocalDiskNodeCache, LocalDiskNodeCacheOpenMode};
 
 #[maybe_async::maybe_async(AFIT)]
 #[allow(async_fn_in_trait)]
@@ -87,4 +90,15 @@ impl<V: Send> BlockLoader<V> for u64 {
         let _ = new_path;
         self.clone()
     }
+}
+
+pub trait NodeCache<P> {
+    fn push(&self, p: &P, data: &[u8]);
+    #[cfg(feature = "mt")]
+    fn load(&self, p: &P, data: &mut [u8]) -> impl std::future::Future<Output = Result<bool>> + Send;
+    #[cfg(not(feature = "mt"))]
+    fn load(&self, p: &P, data: &mut [u8]) -> impl std::future::Future<Output = Result<bool>>;
+    fn invalid(&self, p: &P);
+    fn evict(&self);
+    fn get_stats(&self) -> cache::NodeTieredCacheStats;
 }
