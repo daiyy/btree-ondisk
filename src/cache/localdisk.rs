@@ -16,7 +16,7 @@ pub struct LocalDiskNodeCache {
 }
 
 #[derive(PartialEq)]
-pub enum LocakDiskNodeCacheOpenMode {
+pub enum LocalDiskNodeCacheOpenMode {
     ReuseCache,
     ReuseSpace,
     Recreate,
@@ -69,8 +69,8 @@ impl<P: Copy + Into<u64>> NodeCache<P> for LocalDiskNodeCache {
 }
 
 impl LocalDiskNodeCache {
-    pub async fn new(dir: impl AsRef<Path>, capacity: usize, mode: LocakDiskNodeCacheOpenMode) -> Self {
-        if mode == LocakDiskNodeCacheOpenMode::Recreate {
+    pub async fn new(dir: impl AsRef<Path>, capacity: usize, mode: LocalDiskNodeCacheOpenMode) -> Self {
+        if mode == LocalDiskNodeCacheOpenMode::Recreate {
             let _ = tokio::fs::remove_dir_all(&dir).await;
         }
 
@@ -89,7 +89,7 @@ impl LocalDiskNodeCache {
             .await
             .expect("failed to build cache");
 
-        if mode == LocakDiskNodeCacheOpenMode::ReuseSpace {
+        if mode == LocalDiskNodeCacheOpenMode::ReuseSpace {
             let _ = hybrid.storage().destroy().await.expect("failed to clear cache");
             let _ = hybrid.storage().wait().await;
         }
