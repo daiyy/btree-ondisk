@@ -6,7 +6,7 @@ use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use btree_ondisk::bmap::BMap;
 use btree_ondisk::NodeValue;
-use btree_ondisk::MemoryBlockLoader;
+use btree_ondisk::{MemoryBlockLoader, NullNodeCache};
 use btree_ondisk::VALID_EXTERNAL_ASSIGN_MASK;
 
 const CACHE_LIMIT: usize = 10;
@@ -61,7 +61,7 @@ impl<const N: usize> NodeValue for CustomValue<N> {
 }
 
 struct MemoryFile<'a, const N: usize> {
-    bmap: BMap<'a, u64, CustomValue<N>, u64, MemoryBlockLoader<u64>>,
+    bmap: BMap<'a, u64, CustomValue<N>, u64, MemoryBlockLoader<u64>, NullNodeCache>,
     loader: MemoryBlockLoader<u64>,
     #[allow(dead_code)]
     data_block_size: usize,
@@ -75,7 +75,7 @@ struct MemoryFile<'a, const N: usize> {
 impl<'a, const N: usize> MemoryFile<'a, N> {
     fn new(root_node_size: usize, meta_block_size: usize, data_block_size: usize) -> Self {
         let loader = MemoryBlockLoader::<u64>::new(data_block_size);
-        let bmap = BMap::<u64, CustomValue<N>, u64, MemoryBlockLoader<u64>>::new(root_node_size, meta_block_size, loader.clone());
+        let bmap = BMap::<u64, CustomValue<N>, u64, MemoryBlockLoader<u64>, NullNodeCache>::new(root_node_size, meta_block_size, loader.clone(), NullNodeCache);
         // limit max cached meta data nodes
         bmap.set_cache_limit(CACHE_LIMIT);
         let mut start_seq = VALID_EXTERNAL_ASSIGN_MASK;

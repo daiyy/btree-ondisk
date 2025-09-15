@@ -3,13 +3,13 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use rand::Rng;
 use indicatif::{ProgressBar, ProgressStyle};
 use btree_ondisk::bmap::BMap;
-use btree_ondisk::MemoryBlockLoader;
+use btree_ondisk::{MemoryBlockLoader, NullNodeCache};
 
 const VALID_EXTERNAL_ASSIGN_MASK: u64 = 0xFFFF_0000_0000_0000;
 const CACHE_LIMIT: usize = 10;
 
 struct MemoryFile<'a> {
-    bmap: BMap<'a, u64, u64, u64, MemoryBlockLoader<u64>>,
+    bmap: BMap<'a, u64, u64, u64, MemoryBlockLoader<u64>, NullNodeCache>,
     loader: MemoryBlockLoader<u64>,
     #[allow(dead_code)]
     data_block_size: usize,
@@ -23,7 +23,7 @@ struct MemoryFile<'a> {
 impl<'a> MemoryFile<'a> {
     fn new(root_node_size: usize, meta_node_size: usize, data_block_size: usize, max_file_blk_idx: u64) -> Self {
         let loader = MemoryBlockLoader::new(data_block_size);
-        let bmap = BMap::<u64, u64, u64, MemoryBlockLoader<u64>>::new(root_node_size, meta_node_size, loader.clone());
+        let bmap = BMap::<u64, u64, u64, MemoryBlockLoader<u64>, NullNodeCache>::new(root_node_size, meta_node_size, loader.clone(), NullNodeCache);
         // limit max cached meta data nodes
         bmap.set_cache_limit(CACHE_LIMIT);
         Self {
