@@ -28,7 +28,7 @@ mod cache;
 pub use crate::loader::null::NullBlockLoader;
 pub use crate::loader::memory::MemoryBlockLoader;
 pub use crate::cache::null::NullNodeCache;
-pub use crate::cache::localdisk::LocalDiskNodeCache;
+pub use crate::cache::localdisk::{LocalDiskNodeCache, LocalDiskNodeCacheOpenMode};
 
 #[maybe_async::maybe_async(AFIT)]
 #[allow(async_fn_in_trait)]
