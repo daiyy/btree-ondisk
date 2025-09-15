@@ -383,10 +383,10 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         if let Some(mut node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) {
             // try on tiered cache
             #[cfg(not(feature = "sync-api"))]
-            let found = self.node_tiered_cache.load(id, node.as_mut()).await?;
+            let found = self.node_tiered_cache.load(*id, node.as_mut()).await?;
             #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
             let found = futures::executor::block_on(async {
-                self.node_tiered_cache.load(id, node.as_mut()).await
+                self.node_tiered_cache.load(*id, node.as_mut()).await
             })?;
             #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
             let found = tokio::runtime::Handle::current().block_on(async {

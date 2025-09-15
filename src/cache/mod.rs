@@ -1,4 +1,5 @@
 pub mod null;
+#[cfg(feature = "local-disk-node-cache")]
 pub mod localdisk;
 
 use std::sync::{Arc, atomic::AtomicUsize};

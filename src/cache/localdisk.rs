@@ -22,7 +22,7 @@ pub enum LocalDiskNodeCacheOpenMode {
     Recreate,
 }
 
-impl<P: Copy + Into<u64>> NodeCache<P> for LocalDiskNodeCache {
+impl<P: Send + Copy + Into<u64>> NodeCache<P> for LocalDiskNodeCache {
     fn push(&self, p: &P, data: &[u8]) {
         let key = (*p).into();
         self.stats.total_push.fetch_add(1, Ordering::SeqCst);
@@ -33,8 +33,8 @@ impl<P: Copy + Into<u64>> NodeCache<P> for LocalDiskNodeCache {
         );
     }
 
-    async fn load(&self, p: &P, data: &mut [u8]) -> Result<bool> {
-        let key = (*p).into();
+    async fn load(&self, p: P, data: &mut [u8]) -> Result<bool> {
+        let key = p.into();
         self.stats.total_load.fetch_add(1, Ordering::SeqCst);
         match self.hybrid.get(&key).await
                 .map_err(|e| {
