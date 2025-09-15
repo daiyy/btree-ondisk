@@ -4,7 +4,7 @@ use std::path::Path;
 use foyer::{
     HybridCacheBuilder, HybridCache,
     BlockEngineBuilder, FsDeviceBuilder, DeviceBuilder,
-    HybridCachePolicy,
+    HybridCachePolicy, HybridCacheProperties, Location,
 };
 use crate::NodeCache;
 use super::NodeTieredCacheStats;
@@ -15,11 +15,22 @@ pub struct LocalDiskNodeCache {
     stats: NodeTieredCacheStats,
 }
 
+#[derive(PartialEq)]
+pub enum LocakDiskNodeCacheOpenMode {
+    ReuseCache,
+    ReuseSpace,
+    Recreate,
+}
+
 impl<P: Copy + Into<u64>> NodeCache<P> for LocalDiskNodeCache {
     fn push(&self, p: &P, data: &[u8]) {
         let key = (*p).into();
         self.stats.total_push.fetch_add(1, Ordering::SeqCst);
-        self.hybrid.insert(key, data.to_vec());
+        self.hybrid.insert_with_properties(key, data.to_vec(),
+            HybridCacheProperties::default()
+                .with_ephemeral(false)
+                .with_location(Location::OnDisk)
+        );
     }
 
     async fn load(&self, p: &P, data: &mut [u8]) -> Result<bool> {
@@ -58,7 +69,11 @@ impl<P: Copy + Into<u64>> NodeCache<P> for LocalDiskNodeCache {
 }
 
 impl LocalDiskNodeCache {
-    pub async fn new(dir: impl AsRef<Path>, capacity: usize) -> Self {
+    pub async fn new(dir: impl AsRef<Path>, capacity: usize, mode: LocakDiskNodeCacheOpenMode) -> Self {
+        if mode == LocakDiskNodeCacheOpenMode::Recreate {
+            let _ = tokio::fs::remove_dir_all(&dir).await;
+        }
+
         let cache_device = FsDeviceBuilder::new(dir)
             .with_capacity(capacity)
             .build()
@@ -73,6 +88,11 @@ impl LocalDiskNodeCache {
             .build()
             .await
             .expect("failed to build cache");
+
+        if mode == LocakDiskNodeCacheOpenMode::ReuseSpace {
+            let _ = hybrid.storage().destroy().await.expect("failed to clear cache");
+            let _ = hybrid.storage().wait().await;
+        }
 
         Self {
             hybrid,
