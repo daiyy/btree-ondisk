@@ -19,7 +19,6 @@ atomic_refcell = { version = "0.1.13", optional = true }
 futures = { version = "0.3.31", optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
 maybe-async = "0.2.10"
-foyer = { version = "0.19.2", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -39,7 +38,6 @@ sync-api = ["maybe-async/is_sync"]
 mt = []
 tokio-runtime = ["dep:tokio"]
 futures-runtime = ["dep:futures"]
-local-disk-node-cache = ["dep:foyer", "dep:tokio"]
 
 [[example]]
 name = "mt-rc"
