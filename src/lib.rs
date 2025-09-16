@@ -91,6 +91,8 @@ impl<V: Send> BlockLoader<V> for u64 {
     }
 }
 
+pub use crate::cache::NodeTieredCacheStats;
+
 pub trait NodeCache<P> {
     fn push(&self, p: &P, data: &[u8]);
     #[cfg(feature = "mt")]
