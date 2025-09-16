@@ -390,7 +390,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             })?;
             #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
             let found = tokio::runtime::Handle::current().block_on(async {
-                self.node_tiered_cache.load(id, node.as_mut()).await
+                self.node_tiered_cache.load(*id, node.as_mut()).await
             })?;
             if found {
                 node.do_update();
