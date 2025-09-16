@@ -811,7 +811,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         NonLeafNodeIter::new(self)
     }
 
-    /// Release bmap and get back block loader
+    /// Get back block loader
     pub fn get_block_loader(&self) -> L {
         match &self.inner {
             NodeType::Direct(_) => {
@@ -820,6 +820,19 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
             },
             NodeType::Btree(btree) => {
                 return btree.block_loader.clone();
+            },
+        }
+    }
+
+    /// Get back node cache
+    pub fn get_node_cache(&self) -> C {
+        match &self.inner {
+            NodeType::Direct(_) => {
+                assert!(self.node_tiered_cache.is_some());
+                return self.node_tiered_cache.as_ref().unwrap().clone();
+            },
+            NodeType::Btree(btree) => {
+                return btree.node_tiered_cache.clone();
             },
         }
     }
