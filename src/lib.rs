@@ -102,4 +102,5 @@ pub trait NodeCache<P> {
     fn invalid(&self, p: &P);
     fn evict(&self);
     fn get_stats(&self) -> cache::NodeTieredCacheStats;
+    fn shutdown(&self);
 }

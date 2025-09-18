@@ -28,4 +28,7 @@ impl<P: Send> NodeCache<P> for NullNodeCache {
         let _ = stats.total_remove.load(Ordering::SeqCst);
         stats
     }
+
+    fn shutdown(&self) {
+    }
 }
