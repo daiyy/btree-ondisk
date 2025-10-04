@@ -848,14 +848,14 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
                     .filter_map(|(key, node)| {
                         let id = node.id();
                         assert!(key == id);
-                        if id.is_valid_extern_assign() || !node.is_dirty() {
+                        if id.is_valid_extern_assign() || node.is_dirty() {
                             // skip node that:
                             //   - is internally used (not yet assigned value)
                             // or
                             //   - is dirty
-                            Some(node.clone())
-                        } else {
                             None
+                        } else {
+                            Some(node.clone())
                         }
                     })
                     .collect();
