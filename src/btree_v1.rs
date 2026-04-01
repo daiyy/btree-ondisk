@@ -242,13 +242,17 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
     }
 
     pub(crate) async fn get_from_nodes(&self, val: V) -> Result<BtreeNodeRef<'a, K, V>> {
-        let mut list = self.nodes.borrow_mut();
-        if let Some(node) = list.get(&val) {
-            return Ok(node.clone());
+        {
+            let list = self.nodes.borrow_mut();
+            if let Some(node) = list.get(&val) {
+                return Ok(node.clone());
+            }
+            drop(list);
         }
 
         if let Some(mut node) = BtreeNode::<K, V>::new(val, self.meta_block_size) {
             let more = self.meta_block_loader(val, node.as_u8_mut()).await?;
+            let mut list = self.nodes.borrow_mut();
             let n = Rc::new(RefCell::new(node));
             list.insert(val, n.clone());
 

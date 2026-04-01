@@ -384,11 +384,13 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
 
     #[maybe_async::maybe_async]
     pub(crate) async fn get_from_nodes(&self, id: &P) -> Result<BtreeNodeRef<'a, K, V, P>> {
-        let list = self.nodes.borrow();
-        if let Some(node) = list.get(id) {
-            return Ok(node.clone());
+        {
+            let list = self.nodes.borrow();
+            if let Some(node) = list.get(id) {
+                return Ok(node.clone());
+            }
+            drop(list);
         }
-        drop(list);
 
         if let Some(mut node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) {
             // try on tiered cache
