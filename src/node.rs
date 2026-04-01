@@ -166,7 +166,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         unsafe {
             let mut flags = self.header.flags;
             flags |= BTREE_NODE_FLAG_LEAF;
-            ptr::write_volatile(ptr, flags);
+            ptr::write(ptr, flags);
         }
     }
 
@@ -176,7 +176,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         unsafe {
             let mut flags = self.header.flags;
             flags &= !BTREE_NODE_FLAG_LEAF;
-            ptr::write_volatile(ptr, flags);
+            ptr::write(ptr, flags);
         }
     }
 
@@ -194,7 +194,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         unsafe {
             let mut flags = self.header.flags;
             flags |= BTREE_NODE_FLAG_LARGE;
-            ptr::write_volatile(ptr, flags);
+            ptr::write(ptr, flags);
         }
     }
 
@@ -204,7 +204,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         unsafe {
             let mut flags = self.header.flags;
             flags &= !BTREE_NODE_FLAG_LARGE;
-            ptr::write_volatile(ptr, flags);
+            ptr::write(ptr, flags);
         }
     }
 
@@ -217,7 +217,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     pub fn set_flags(&self, flags: u8) {
         let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
         unsafe {
-            ptr::write_volatile(ptr, flags);
+            ptr::write(ptr, flags);
         }
     }
 
@@ -230,7 +230,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     pub fn set_level(&self, level: usize) {
         let ptr = ptr::addr_of!(self.header.level) as *mut u8;
         unsafe {
-            ptr::write_volatile(ptr, level as u8);
+            ptr::write(ptr, level as u8);
         }
     }
 
@@ -275,7 +275,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     pub fn set_nchild(&self, c: usize) {
         let ptr = ptr::addr_of!(self.header.nchildren) as *mut u16;
         unsafe {
-            ptr::write_volatile(ptr, c as u16);
+            ptr::write(ptr, c as u16);
         }
     }
 
@@ -297,7 +297,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     pub fn set_userdata(&self, data: u32) {
         let ptr = ptr::addr_of!(self.header.userdata) as *mut u32;
         unsafe {
-            ptr::write_volatile(ptr, data);
+            ptr::write(ptr, data);
         }
     }
 
@@ -344,7 +344,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     pub fn set_id(&self, id: P) {
         let ptr = ptr::addr_of!(self.id) as *mut P;
         unsafe {
-            ptr::write_volatile(ptr, id);
+            ptr::write(ptr, id);
         }
     }
 
@@ -768,11 +768,11 @@ impl<'a, V> DirectNode<'a, V>
     pub fn init(&self, flags: usize, level: usize, nchild: usize) {
         unsafe {
             let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
-            ptr::write_volatile(ptr, flags as u8);
+            ptr::write(ptr, flags as u8);
             let ptr = ptr::addr_of!(self.header.level) as *mut u8;
-            ptr::write_volatile(ptr, level as u8);
+            ptr::write(ptr, level as u8);
             let ptr = ptr::addr_of!(self.header.nchildren) as *mut u16;
-            ptr::write_volatile(ptr, nchild as u16);
+            ptr::write(ptr, nchild as u16);
         }
     }
 
@@ -801,7 +801,7 @@ impl<'a, V> DirectNode<'a, V>
     pub fn set_userdata(&self, data: u32) {
         let ptr = ptr::addr_of!(self.header.userdata) as *mut u32;
         unsafe {
-            ptr::write_volatile(ptr, data);
+            ptr::write(ptr, data);
         }
     }
 
