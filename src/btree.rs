@@ -39,12 +39,12 @@ impl<'a, K, V, P> BtreeNodeDirty<'a, K, V, P>
 
     pub fn size(&self) -> usize {
         // rc/arc -> box -> inner slice -> len
-        self.0.as_ref().as_ref().as_ref().len()
+        self.0.as_ref().as_ref().as_u8_ref().len()
     }
 
     pub fn as_slice(&self) -> &[u8] {
         // rc/arc -> box -> inner slice
-        self.0.as_ref().as_ref().as_ref()
+        self.0.as_ref().as_ref().as_u8_ref()
     }
 
     pub fn clear_dirty(&self) {
@@ -393,14 +393,14 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         if let Some(mut node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) {
             // try on tiered cache
             #[cfg(not(feature = "sync-api"))]
-            let found = self.node_tiered_cache.load(*id, node.as_mut()).await?;
+            let found = self.node_tiered_cache.load(*id, node.as_u8_mut()).await?;
             #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
             let found = futures::executor::block_on(async {
-                self.node_tiered_cache.load(*id, node.as_mut()).await
+                self.node_tiered_cache.load(*id, node.as_u8_mut()).await
             })?;
             #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
             let found = tokio::runtime::Handle::current().block_on(async {
-                self.node_tiered_cache.load(*id, node.as_mut()).await
+                self.node_tiered_cache.load(*id, node.as_u8_mut()).await
             })?;
             if found {
                 node.do_update();
@@ -416,14 +416,14 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
 
             // try on backend
             #[cfg(not(feature = "sync-api"))]
-            let more = self.meta_block_loader(*id, node.as_mut()).await?;
+            let more = self.meta_block_loader(*id, node.as_u8_mut()).await?;
             #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
             let more = futures::executor::block_on(async {
-                self.meta_block_loader(*id, node.as_mut()).await
+                self.meta_block_loader(*id, node.as_u8_mut()).await
             })?;
             #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
             let more = tokio::runtime::Handle::current().block_on(async {
-                self.meta_block_loader(*id, node.as_mut()).await
+                self.meta_block_loader(*id, node.as_u8_mut()).await
             })?;
             node.do_update();
             #[cfg(feature = "rc")]
@@ -886,7 +886,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             let n = self.nodes.borrow_mut().remove(id);
             assert!(n.is_some());
             let node = n.unwrap();
-            self.node_tiered_cache.push(node.id(), node.as_ref().as_ref().as_ref());
+            self.node_tiered_cache.push(node.id(), node.as_ref().as_ref().as_u8_ref());
             count -= 1;
         }
         self.node_tiered_cache.evict();
