@@ -10,7 +10,7 @@ impl<V: Send> BlockLoader<V> for NullBlockLoader {
         todo!()
     }
 
-    fn from_new_path(self, _: &str) -> Self {
+    fn dup_from_new_path(self, _: &str) -> Self {
         todo!()
     }
 }

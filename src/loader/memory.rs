@@ -37,7 +37,7 @@ impl<V: Send + Sync + Eq + std::hash::Hash + std::fmt::Display> BlockLoader<V> f
         Err(Error::new(ErrorKind::NotFound, msg))
     }
 
-    fn from_new_path(self, _: &str) -> Self {
+    fn dup_from_new_path(self, _: &str) -> Self {
         todo!()
     }
 }

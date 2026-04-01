@@ -60,7 +60,7 @@ pub trait BlockLoader<V> {
     fn read(&self, v: V, buf: &mut [u8], user_data: u32) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>> + Send;
     #[cfg(not(feature = "mt"))]
     fn read(&self, v: V, buf: &mut [u8], user_data: u32) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>>;
-    fn from_new_path(self, new_path: &str) -> Self;
+    fn dup_from_new_path(self, new_path: &str) -> Self;
 }
 
 impl NodeValue for u64 {
@@ -85,7 +85,7 @@ impl<V: Send> BlockLoader<V> for u64 {
         Ok(Vec::new())
     }
 
-    fn from_new_path(self, new_path: &str) -> Self {
+    fn dup_from_new_path(self, new_path: &str) -> Self {
         let _ = new_path;
         self
     }
