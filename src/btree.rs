@@ -85,6 +85,16 @@ pub struct BtreePath<'a, K, V, P> {
     levels: Vec<AtomicRefCell<BtreePathLevel<'a, K, V, P>>>,
 }
 
+impl<'a, K, V, P> Default for BtreePath<'a, K, V, P>
+    where
+		V: Copy + NodeValue,
+		P: Copy + NodeValue,
+{
+	fn default() -> Self {
+		Self::new()
+	}
+}
+
 impl<'a, K, V, P> BtreePath<'a, K, V, P>
     where
         V: Copy + NodeValue,
@@ -300,7 +310,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
     #[inline]
     fn is_dirty(&self) -> bool {
         #[cfg(feature = "rc")]
-        return self.dirty.borrow().clone();
+        return *self.dirty.borrow();
         #[cfg(feature = "arc")]
         return self.dirty.load(Ordering::SeqCst);
     }
@@ -446,7 +456,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             }
             return Ok(n);
         }
-        return Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"));
+        Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"))
     }
 
     pub(crate) fn get_new_node(&self, id: &P, level: usize) -> Result<BtreeNodeRef<'a, K, V, P>> {
@@ -466,14 +476,14 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             }
             return Ok(n);
         }
-        return Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"));
+        Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"))
     }
 
     fn remove_from_nodes(&self, node: BtreeNodeRef<K, V, P>) -> Result<()> {
         let n = self.nodes.borrow_mut().remove(node.id());
         assert!(n.is_some());
         let node = n.unwrap();
-        self.node_tiered_cache.invalid(&node.id());
+        self.node_tiered_cache.invalid(node.id());
         Ok(())
     }
 
@@ -498,7 +508,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
     async fn do_lookup(&self, path: &BtreePath<'a, K, V, P>, key: &K, minlevel: usize) -> Result<(V, P)> {
         let root = self.get_root_node();
         let mut level = root.get_level();
-        if level < minlevel || root.get_nchild() <= 0 {
+        if level < minlevel || root.get_nchild() == 0 {
             return Err(Error::new(ErrorKind::NotFound, "btree root node not eligible for lookup"));
         }
 
@@ -509,12 +519,10 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         // set invalid value when returned index out of root node capacity
         if index > root.get_capacity() - 1 {
             // do nothing, next_level_id is init with invalid value
+        } else if level == BTREE_NODE_LEVEL_MIN {
+            value = *root.get_val::<V>(index);
         } else {
-            if level == BTREE_NODE_LEVEL_MIN {
-                value = *root.get_val::<V>(index);
-            } else {
-                next_level_id = *root.get_val::<P>(index);
-            }
+            next_level_id = *root.get_val::<P>(index);
         }
 
         path.set_index(level, index);
@@ -537,15 +545,13 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
                     }
                     value = V::invalid_value();
                 }
+            } else if index < node.get_capacity() {
+                next_level_id = *node.get_val::<P>(index);
             } else {
-                if index < node.get_capacity() {
-                    next_level_id = *node.get_val::<P>(index);
-                } else {
-                    if found || level != BTREE_NODE_LEVEL_MIN {
-                        warn!("index {} - level {} - found {}", index, level, found);
-                    }
-                    next_level_id = P::invalid_value();
+                if found || level != BTREE_NODE_LEVEL_MIN {
+                    warn!("index {} - level {} - found {}", index, level, found);
                 }
+                next_level_id = P::invalid_value();
             }
 
             path.set_nonroot_node(level, node);
@@ -877,10 +883,10 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         while count > 0 {
             let node = nodes.pop().expect("failed to get evict candidate");
             let id = node.id();
-            let n = self.nodes.borrow_mut().remove(&id);
+            let n = self.nodes.borrow_mut().remove(id);
             assert!(n.is_some());
             let node = n.unwrap();
-            self.node_tiered_cache.push(&node.id(), node.as_ref().as_ref().as_ref());
+            self.node_tiered_cache.push(node.id(), node.as_ref().as_ref().as_ref());
             count -= 1;
         }
         self.node_tiered_cache.evict();
@@ -912,7 +918,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
 
             let mut list = self.nodes.borrow_mut();
             // remove node from list via old temp id
-            if let Some(node) = list.remove(&oldid) {
+            if let Some(node) = list.remove(oldid) {
                 // update node id
                 node.set_id(newid);
                 // insert back with new val
@@ -956,7 +962,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         // MIN level node has been marked dirty by insert or delete
         let mut level = BTREE_NODE_LEVEL_MIN + 1;
         while level < self.get_height() - 1 {
-            let node = self.get_node(&path, level);
+            let node = self.get_node(path, level);
             node.mark_dirty();
             level += 1;
         }
@@ -992,17 +998,17 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             dirty: RefCell::new(false),
             #[cfg(feature = "arc")]
             nodes: AtomicRefCell::new(HashMap::new()),
-            node_tiered_cache: node_tiered_cache,
+            node_tiered_cache,
             #[cfg(feature = "arc")]
             last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(P::invalid_value()))),
             #[cfg(feature = "arc")]
             dirty: Arc::new(AtomicBool::new(false)),
-            meta_block_size: meta_block_size,
+            meta_block_size,
             #[cfg(feature = "rc")]
             cache_limit: RefCell::new(DEFAULT_CACHE_UNLIMITED),
             #[cfg(feature = "arc")]
             cache_limit: Arc::new(AtomicUsize::new(DEFAULT_CACHE_UNLIMITED)),
-            block_loader: block_loader,
+            block_loader,
         }
     }
 
@@ -1073,7 +1079,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             }
             return Ok(true);
         }
-        return Ok(false);
+        Ok(false)
     }
 }
 
@@ -1102,7 +1108,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
 
             if path.get_index(level) == 0 {
                 let node_key = node.get_key(0);
-                self.promote_key(path, level + 1, &node_key);
+                self.promote_key(path, level + 1, node_key);
             }
         } else {
             // root node
@@ -1151,7 +1157,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         let nchild = node.get_nchild();
         let mut mv = false;
 
-        let mut n = (nchild + 1) / 2;
+        let mut n = nchild.div_ceil(2); // (nchild + 1) / 2;
         if n > nchild - path.get_index(level) {
             n -= 1;
             mv = true;
@@ -1203,7 +1209,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         let lnchild = left.get_nchild();
         let mut mv = false;
 
-        let mut n = (nchild + lnchild + 1) / 2 - lnchild;
+        let mut n = (nchild + lnchild).div_ceil(2) - lnchild; // (nchild + lnchild + 1) / 2 - lnchild;
         if n > path.get_index(level) {
             n -= 1;
             mv = true;
@@ -1221,7 +1227,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         node.mark_dirty();
 
         let node_key = node.get_key(0);
-        self.promote_key(path, level + 1, &node_key);
+        self.promote_key(path, level + 1, node_key);
 
         if mv {
             let sib_node = path.get_sib_node(level);
@@ -1244,7 +1250,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         let rnchild = right.get_nchild();
         let mut mv = false;
 
-        let mut n = (nchild + rnchild + 1) / 2 - rnchild;
+        let mut n = (nchild + rnchild).div_ceil(2) - rnchild; // (nchild + rnchild + 1) / 2 - rnchild;
         if n > nchild - path.get_index(level) {
             n -= 1;
             mv = true;
@@ -1263,7 +1269,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
 
         path.set_index(level + 1, path.get_index(level + 1) + 1);
         let node_key = right.get_key(0);
-        self.promote_key(path, level + 1, &node_key);
+        self.promote_key(path, level + 1, node_key);
         path.set_index(level + 1, path.get_index(level + 1) - 1);
 
         if mv {
@@ -1350,7 +1356,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         left.mark_dirty();
 
         let node_key = node.get_key(0);
-        self.promote_key(path, level + 1, &node_key);
+        self.promote_key(path, level + 1, node_key);
 
         path.set_sib_node_none(level);
         path.set_index(level, path.get_index(level) + n);
@@ -1379,7 +1385,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
 
         path.set_index(level + 1, path.get_index(level + 1) + 1);
         let node_key = right.get_key(0);
-        self.promote_key(path, level + 1, &node_key);
+        self.promote_key(path, level + 1, node_key);
         path.set_index(level + 1, path.get_index(level + 1) - 1);
 
         path.set_sib_node_none(level);
@@ -1396,7 +1402,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             node.mark_dirty();
             if path.get_index(level) == 0 {
                 let node_key = node.get_key(0);
-                self.promote_key(path, level + 1, &node_key);
+                self.promote_key(path, level + 1, node_key);
             }
         } else {
             let root = self.get_root_node();
@@ -1586,13 +1592,13 @@ impl<'a, K, V, P, L, C> VMap<K, V> for BtreeMap<'a, K, V, P, L, C>
         let res = self.do_lookup(&path, start, BTREE_NODE_LEVEL_MIN).await;
         match res {
             Ok(_) => {
-                return Ok(*start);
+                Ok(*start)
             },
             Err(e) => {
                 if e.kind() == ErrorKind::NotFound {
                    return self.get_next_key(&path, BTREE_NODE_LEVEL_MIN);
                 }
-                return Err(e);
+                Err(e)
             }
         }
     }

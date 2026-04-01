@@ -34,7 +34,7 @@ impl<V: Send + Sync + Eq + std::hash::Hash + std::fmt::Display> BlockLoader<V> f
             return Ok(Vec::new());
         }
         let msg = format!("requested key {v} not exists");
-        return Err(Error::new(ErrorKind::NotFound, msg));
+        Err(Error::new(ErrorKind::NotFound, msg))
     }
 
     fn from_new_path(self, _: &str) -> Self {
@@ -57,7 +57,7 @@ impl<V: Eq + Clone + std::hash::Hash + std::fmt::Display> MemoryBlockLoader<V> {
         assert!(buf.len() == self.meta_node_size);
         let data = buf.to_vec();
         let key = v.clone();
-        if let Some(_) = self.inner.borrow_mut().insert(v, data) {
+        if self.inner.borrow_mut().insert(v, data).is_some() {
             panic!("key {key} already exists!");
         }
     }

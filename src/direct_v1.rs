@@ -48,7 +48,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
 
     #[inline]
     fn is_dirty(&self) -> bool {
-        self.dirty.borrow().clone()
+        *self.dirty.borrow()
     }
 
     #[inline]
@@ -118,7 +118,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
         if val.is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        return Ok(val);
+        Ok(val)
     }
 
     async fn lookup_contig(&self, key: &K, maxblocks: usize) -> Result<(V, usize)> {
@@ -138,7 +138,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             count += 1;
         }
         let val = *self.root.borrow().get_val(index + count);
-        return Ok((val, count));
+        Ok((val, count))
     }
 
     async fn insert(&self, key: K, val: V) -> Result<()> {
@@ -178,7 +178,7 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
                 self.root.borrow().get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, ""));
         }
-        let _ = self.root.borrow_mut().set_val(index, &V::invalid_value());
+        self.root.borrow_mut().set_val(index, &V::invalid_value());
         Ok(())
     }
 
@@ -203,8 +203,8 @@ impl<'a, K, V> VMap<K, V> for DirectMap<'a, K, V>
             }
             key += 1;
         }
-        if last_key.is_some() {
-            return Ok::<K, Error>(last_key.unwrap());
+        if let Some(key) = last_key {
+            return Ok::<K, Error>(key);
         }
         Err(Error::new(ErrorKind::NotFound, ""))
     }

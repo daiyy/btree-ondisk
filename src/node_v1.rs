@@ -56,10 +56,10 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         };
 
         Self {
-            header: header,
-            keymap: keymap,
-            valmap: valmap,
-            capacity: capacity,
+            header,
+            keymap,
+            valmap,
+            capacity,
             ptr: std::ptr::null(),
             size: len,
             id: None,
@@ -105,7 +105,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
 
     pub fn as_ref(&self) -> &[u8] {
         unsafe {
-            std::slice::from_raw_parts(self.ptr as *const u8, self.size)
+            std::slice::from_raw_parts(self.ptr, self.size)
         }
     }
 
@@ -353,11 +353,11 @@ impl<'a, K, V> BtreeNode<'a, K, V>
             if s && index > 0 {
                 index -= 1;
             }
-        } else if s == false {
+        } else if !s {
             index += 1;
         }
 
-        return (false, index as usize);
+        (false, index as usize)
     }
 
     // insert key val @ index
@@ -436,18 +436,16 @@ impl<'a, K, V> fmt::Display for BtreeNode<'a, K, V>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_large() {
-            write!(f, "===== dump btree node @{:?} ROOT ====\n", self.header as *const NodeHeader)?;
+            writeln!(f, "===== dump btree node @{:?} ROOT ====", self.header as *const NodeHeader)?;
+        } else if self.id().is_some() {
+            writeln!(f, "===== dump btree node @{:?} id {} ====", self.header as *const NodeHeader, self.id().unwrap())?;
         } else {
-            if self.id().is_some() {
-                write!(f, "===== dump btree node @{:?} id {} ====\n", self.header as *const NodeHeader, self.id().unwrap())?;
-            } else {
-                write!(f, "===== dump btree node @{:?} id None ====\n", self.header as *const NodeHeader)?;
-            }
+            writeln!(f, "===== dump btree node @{:?} id None ====", self.header as *const NodeHeader)?;
         }
-        write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}\n",
+        writeln!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}",
             self.header.flags, self.header.level, self.header.nchildren, self.capacity)?;
         for idx in 0..self.header.nchildren.into() {
-            write!(f, "{:3}   {:20}   {:20}\n", idx, self.get_key(idx), self.get_val(idx))?;
+            writeln!(f, "{:3}   {:20}   {:20}", idx, self.get_key(idx), self.get_val(idx))?;
         }
         write!(f, "")
     }
@@ -491,9 +489,9 @@ impl<'a, V> DirectNode<'a, V>
         };
 
         Self {
-            header: header,
-            valmap: valmap,
-            capacity: capacity,
+            header,
+            valmap,
+            capacity,
             ptr: std::ptr::null(),
             size: len,
             dirty: false,
@@ -551,7 +549,7 @@ impl<'a, V> DirectNode<'a, V>
 
     pub fn as_ref(&self) -> &[u8] {
         unsafe {
-            std::slice::from_raw_parts(self.ptr as *const u8, self.size)
+            std::slice::from_raw_parts(self.ptr, self.size)
         }
     }
 
@@ -578,11 +576,11 @@ impl<'a, V> fmt::Display for DirectNode<'a, V>
         V: Copy + fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "===== dump direct node @{:?} ====\n", self.header as *const NodeHeader)?;
-        write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}\n",
+        writeln!(f, "===== dump direct node @{:?} ====", self.header as *const NodeHeader)?;
+        writeln!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}",
             self.header.flags, self.header.level, self.header.nchildren, self.capacity)?;
         for idx in 0..self.capacity {
-            write!(f, "{:3}   {:20}   {:20}\n", idx, idx, self.get_val(idx))?;
+            writeln!(f, "{:3}   {:20}   {:20}", idx, idx, self.get_val(idx))?;
         }
         write!(f, "")
     }

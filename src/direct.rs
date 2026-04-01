@@ -17,7 +17,7 @@ use crate::DEFAULT_CACHE_UNLIMITED;
 #[cfg(feature = "rc")]
 pub struct DirectMap<'a, K, V, P> {
     pub data: Vec<u8>,
-    pub root: Rc<Box<DirectNode<'a, V>>>,
+    pub root: Rc<DirectNode<'a, V>>,
     pub last_seq: RefCell<P>,
     pub dirty: RefCell<bool>,
     pub cache_limit: RefCell<usize>,
@@ -78,7 +78,7 @@ impl<'a, K, V, P> DirectMap<'a, K, V, P>
     #[inline]
     fn is_dirty(&self) -> bool {
         #[cfg(feature = "rc")]
-        return self.dirty.borrow().clone();
+        return *self.dirty.borrow();
         #[cfg(feature = "arc")]
         return self.dirty.load(Ordering::SeqCst);
     }
@@ -173,7 +173,7 @@ impl<'a, K, V, P> DirectMap<'a, K, V, P>
         v.extend_from_slice(data);
         Self {
             #[cfg(feature = "rc")]
-            root: Rc::new(Box::new(DirectNode::<V>::from_slice(&v))),
+            root: Rc::new(DirectNode::<V>::from_slice(&v)),
             #[cfg(feature = "arc")]
             root: Arc::new(Box::new(DirectNode::<V>::from_slice(&v))),
             data: v,
@@ -218,7 +218,7 @@ impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
         if val.is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, "lookup key not found in direct node"));
         }
-        return Ok(*val);
+        Ok(*val)
     }
 
     #[maybe_async::maybe_async]
@@ -239,7 +239,7 @@ impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
             }
             count += 1;
         }
-        return Ok((*val, count));
+        Ok((*val, count))
     }
 
     #[maybe_async::maybe_async]
@@ -282,7 +282,7 @@ impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
                 self.root.get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, "delete key exceed direct node space or not exists"));
         }
-        let _ = self.root.set_val(index, &V::invalid_value());
+        self.root.set_val(index, &V::invalid_value());
         self.set_dirty();
         Ok(())
     }
@@ -310,8 +310,8 @@ impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
             }
             key += 1;
         }
-        if last_key.is_some() {
-            return Ok::<K, Error>(last_key.unwrap());
+        if let Some(key) = last_key {
+            return Ok::<K, Error>(key);
         }
         Err(Error::new(ErrorKind::NotFound, "last key not found in direct node"))
     }

@@ -87,7 +87,7 @@ impl<V: Send> BlockLoader<V> for u64 {
 
     fn from_new_path(self, new_path: &str) -> Self {
         let _ = new_path;
-        self.clone()
+        self
     }
 }
 

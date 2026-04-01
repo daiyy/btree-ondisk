@@ -77,10 +77,10 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         };
 
         Self {
-            header: header,
-            keymap: keymap,
-            valptr: valptr,
-            capacity: capacity,
+            header,
+            keymap,
+            valptr,
+            capacity,
             ptr: std::ptr::null(),
             size: len,
             id: P::invalid_value(),
@@ -135,7 +135,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     pub fn as_ref(&self) -> &[u8] {
         unsafe {
-            std::slice::from_raw_parts(self.ptr as *const u8, self.size)
+            std::slice::from_raw_parts(self.ptr, self.size)
         }
     }
 
@@ -210,7 +210,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     pub fn set_flags(&self, flags: u8) {
         let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
         unsafe {
-            ptr::write_volatile(ptr, flags as u8);
+            ptr::write_volatile(ptr, flags);
         }
     }
 
@@ -566,11 +566,11 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             if s && index > 0 {
                 index -= 1;
             }
-        } else if s == false {
+        } else if !s {
             index += 1;
         }
 
-        return (false, index as usize);
+        (false, index as usize)
     }
 
     // insert key val @ index
@@ -650,17 +650,17 @@ impl<'a, K, V, P> fmt::Display for BtreeNode<'a, K, V, P>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.is_large() {
-            write!(f, "===== dump btree node @{:?} ROOT ====\n", self.header as *const NodeHeader)?;
+            writeln!(f, "===== dump btree node @{:?} ROOT ====", self.header as *const NodeHeader)?;
         } else {
-            write!(f, "===== dump btree node @{:?} id {} ====\n", self.header as *const NodeHeader, self.id())?;
+            writeln!(f, "===== dump btree node @{:?} id {} ====", self.header as *const NodeHeader, self.id())?;
         }
-        write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}, is leaf: {}\n",
+        writeln!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}, is leaf: {}",
             self.header.flags, self.header.level, self.header.nchildren, self.capacity, self.is_leaf())?;
         for idx in 0..self.header.nchildren.into() {
             if self.is_leaf() {
-                write!(f, "{:3}   {:20}   {:20}\n", idx, self.get_key(idx), self.get_val::<K>(idx))?;
+                writeln!(f, "{:3}   {:20}   {:20}", idx, self.get_key(idx), self.get_val::<K>(idx))?;
             } else {
-                write!(f, "{:3}   {:20}   {:20}\n", idx, self.get_key(idx), self.get_val::<P>(idx))?;
+                writeln!(f, "{:3}   {:20}   {:20}", idx, self.get_key(idx), self.get_val::<P>(idx))?;
             }
         }
         write!(f, "")
@@ -716,9 +716,9 @@ impl<'a, V> DirectNode<'a, V>
         };
 
         Self {
-            header: header,
-            valmap: valmap,
-            capacity: capacity,
+            header,
+            valmap,
+            capacity,
             ptr: std::ptr::null(),
             size: len,
             dirty: false,
@@ -800,7 +800,7 @@ impl<'a, V> DirectNode<'a, V>
 
     pub fn as_ref(&self) -> &[u8] {
         unsafe {
-            std::slice::from_raw_parts(self.ptr as *const u8, self.size)
+            std::slice::from_raw_parts(self.ptr, self.size)
         }
     }
 
@@ -827,11 +827,11 @@ impl<'a, V> fmt::Display for DirectNode<'a, V>
         V: Copy + fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "===== dump direct node @{:?} ====\n", self.header as *const NodeHeader)?;
-        write!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}\n",
+        writeln!(f, "===== dump direct node @{:?} ====", self.header as *const NodeHeader)?;
+        writeln!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}",
             self.header.flags, self.header.level, self.header.nchildren, self.capacity)?;
         for idx in 0..self.capacity {
-            write!(f, "{:3}   {:20}   {:20}\n", idx, idx, self.get_val(idx))?;
+            writeln!(f, "{:3}   {:20}   {:20}", idx, idx, self.get_val(idx))?;
         }
         write!(f, "")
     }

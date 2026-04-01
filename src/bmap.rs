@@ -104,9 +104,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         let old_ud = direct.get_userdata();
 
         // create new btree map
-        let mut v = Vec::with_capacity(data.len());
-        // root node to all zero
-        v.resize(data.len(), 0);
+        let mut v = vec![0; data.len()];
         // init flags with leaf and large
         v[0] = BTREE_NODE_FLAG_LEAF | BTREE_NODE_FLAG_LARGE;
         let mut btree = BtreeMap {
@@ -128,7 +126,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
             last_seq: Arc::new(AtomicU64::new(Into::<u64>::into(last_seq))),
             #[cfg(feature = "arc")]
             dirty: Arc::new(AtomicBool::new(true)),
-            meta_block_size: meta_block_size,
+            meta_block_size,
             #[cfg(feature = "rc")]
             cache_limit: RefCell::new(limit),
             #[cfg(feature = "arc")]
@@ -137,14 +135,14 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         };
 
         // all values in old root node plus one for new k,v to be insert
-        if old_kv.len() + 1 <= btree.root.get_capacity() {
+        if old_kv.len() < btree.root.get_capacity() {
             // create root node @level 1
             btree.root.set_nchild(0);
             btree.root.init_root(1, true);
             btree.root.set_userdata(old_ud);
             let mut index = 0;
             for (k, v) in old_kv.into_iter() {
-                btree.root.insert::<V>(index, &k, &v);
+                btree.root.insert::<V>(index, &k, v);
                 index += 1;
             }
             btree.root.insert::<V>(index, &key, &val);
@@ -162,7 +160,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         node.init(1, 0);
 
         // if value is too large for root node
-        if old_kv.len() == 0 && btree.root.get_capacity() == 0 {
+        if old_kv.is_empty() && btree.root.get_capacity() == 0 {
             first_root_key = key;
         } else {
             // save first key
@@ -170,7 +168,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         }
         let mut index = 0;
         for (k, v) in old_kv.into_iter() {
-            node.insert::<V>(index, &k, &v);
+            node.insert::<V>(index, &k, v);
             index += 1;
         }
         node.insert::<V>(index, &key, &val);
@@ -206,14 +204,14 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[maybe_async::maybe_async]
     async fn convert_to_direct(&mut self, _key: &K, input: &Vec<(K, V)>,
             root_node_size: usize, user_data: u32, last_seq: P, limit: usize, block_loader: L, node_tiered_cache: C) -> Result<()> {
-        let mut v = Vec::with_capacity(root_node_size);
-        v.resize(root_node_size, 0);
+        let v = vec![0; root_node_size];
         let direct = DirectMap {
             #[cfg(feature = "rc")]
-            root: Rc::new(Box::new(DirectNode::<V>::from_slice(&v))),
+            root: Rc::new(DirectNode::<V>::from_slice(&v)),
             #[cfg(feature = "arc")]
             root: Arc::new(Box::new(DirectNode::<V>::from_slice(&v))),
             data: v,
@@ -267,8 +265,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
                 root_node_size, meta_block_size / 2);
         }
         // allocate temp space to init a root node as direct
-        let mut data = Vec::with_capacity(root_node_size);
-        data.resize(root_node_size, 0);
+        let data = vec![0; root_node_size];
         // init direct root node at level 1
         let root = DirectNode::<V>::from_slice(&data);
         // flags = 0, level = 1, nchild = 0;
@@ -276,7 +273,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
 
         Self {
             inner: NodeType::Direct(DirectMap::<K, V, P>::new(&data)),
-            meta_block_size: meta_block_size,
+            meta_block_size,
             block_loader: Some(block_loader),
             node_tiered_cache: Some(node_tiered_cache),
         }
@@ -288,7 +285,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub fn new_direct(data: &[u8], meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Self {
         Self {
             inner: NodeType::Direct(DirectMap::<K, V, P>::new(data)),
-            meta_block_size: meta_block_size,
+            meta_block_size,
             block_loader: Some(block_loader),
             node_tiered_cache: Some(node_tiered_cache),
         }
@@ -300,7 +297,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub fn new_btree(data: &[u8], meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Self {
         Self {
             inner: NodeType::Btree(BtreeMap::<K, V, P, L, C>::new(data, meta_block_size, block_loader, node_tiered_cache)),
-            meta_block_size: meta_block_size,
+            meta_block_size,
             block_loader: None,
             node_tiered_cache: None,
         }
@@ -310,10 +307,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub fn as_slice(&self) -> &[u8] {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.as_slice();
+                direct.as_slice()
             },
             NodeType::Btree(btree) => {
-                return btree.as_slice();
+                btree.as_slice()
             },
         }
     }
@@ -322,10 +319,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub fn dirty(&self) -> bool {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.dirty();
+                direct.dirty()
             },
             NodeType::Btree(btree) => {
-                return btree.dirty();
+                btree.dirty()
             }
         }
     }
@@ -334,10 +331,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub fn clear_dirty(&mut self) {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.clear_dirty();
+                direct.clear_dirty()
             },
             NodeType::Btree(btree) => {
-                return btree.clear_dirty();
+                btree.clear_dirty()
             }
         }
     }
@@ -388,7 +385,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
                     #[cfg(feature = "arc")]
                     let last_seq = direct.last_seq.load(Ordering::SeqCst).into();
                     let limit = direct.get_cache_limit();
-                    let _ = self.convert_and_insert(data, self.meta_block_size, last_seq, limit, key, val).await?;
+                    self.convert_and_insert(data, self.meta_block_size, last_seq, limit, key, val).await?;
                     return Ok(None);
                 }
                 return direct.insert_or_update(key, val).await;
@@ -420,11 +417,11 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
             NodeType::Btree(btree) => {
                 let mut v = Vec::<(K, V)>::new();
                 if btree.delete_check_and_gather(key, &mut v).await? {
-                    let _ = btree.delete(key).await?;
+                    btree.delete(key).await?;
                     // re-visit vec we got, remove above last key we need to delete
                     v.retain(|(_k, _)| _k != key);
                     #[cfg(feature = "rc")]
-                    let _ = self.convert_to_direct(key, &v,
+                    self.convert_to_direct(key, &v,
                         btree.data.len(), btree.root.get_userdata(), btree.last_seq.take(), btree.get_cache_limit(),
                             btree.block_loader.clone(), btree.node_tiered_cache.clone()).await?;
                     #[cfg(feature = "arc")]
@@ -508,10 +505,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub fn lookup_dirty(&self) -> Vec<BtreeNodeDirty<'a, K, V, P>> {
         match &self.inner {
             NodeType::Direct(_) => {
-                return Vec::new();
+                Vec::new()
             },
             NodeType::Btree(btree) => {
-                return btree.lookup_dirty().into_iter().map(|n| BtreeNodeDirty(n)).collect();
+                btree.lookup_dirty().into_iter().map(|n| BtreeNodeDirty(n)).collect()
             },
         }
     }
@@ -609,7 +606,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         }
         match &self.inner {
             NodeType::Direct(_direct) => {
-                return Ok(());
+                Ok(())
             },
             NodeType::Btree(btree) => {
                 // key is unused, so use 0
@@ -687,7 +684,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub async fn mark(&self, key: &K, level: usize) -> Result<()> {
         match &self.inner {
             NodeType::Direct(_) => {
-                return Ok(());
+                Ok(())
             },
             NodeType::Btree(btree) => {
                 return btree.mark(key, level).await;
@@ -703,7 +700,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         }
 
         while key <= &last_key {
-            let _ = self.do_delete(&last_key).await?;
+            self.do_delete(&last_key).await?;
             match self.last_key().await {
                 Ok(key) => {
                     last_key = key;
@@ -716,7 +713,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
                 }
             }
         }
-        return Ok(());
+        Ok(())
     }
 
     /// Truncate index to key value (including key value supplied).
@@ -736,7 +733,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         if root.is_large() {
             return Self::new_btree(buf, meta_block_size, block_loader, node_tiered_cache);
         }
-        return Self::new_direct(buf, meta_block_size, block_loader, node_tiered_cache);
+        Self::new_direct(buf, meta_block_size, block_loader, node_tiered_cache)
     }
 
     /// Write out root node to external buffer.
@@ -750,10 +747,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub fn get_stat(&self) -> BMapStat {
         match &self.inner {
             NodeType::Direct(_) => {
-                return BMapStat::default();
+                BMapStat::default()
             },
             NodeType::Btree(btree) => {
-                return btree.get_stat();
+                btree.get_stat()
             },
         }
     }
@@ -762,10 +759,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub fn get_userdata(&self) -> u32 {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.get_userdata();
+                direct.get_userdata()
             },
             NodeType::Btree(btree) => {
-                return btree.get_userdata();
+                btree.get_userdata()
             },
         }
     }
@@ -774,10 +771,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub fn set_userdata(&self, data: u32) {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.set_userdata(data);
+                direct.set_userdata(data)
             },
             NodeType::Btree(btree) => {
-                return btree.set_userdata(data);
+                btree.set_userdata(data)
             },
         }
     }
@@ -786,10 +783,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub fn get_cache_limit(&self) -> usize {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.get_cache_limit();
+                direct.get_cache_limit()
             },
             NodeType::Btree(btree) => {
-                return btree.get_cache_limit();
+                btree.get_cache_limit()
             },
         }
     }
@@ -798,10 +795,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     pub fn set_cache_limit(&self, limit: usize) {
         match &self.inner {
             NodeType::Direct(direct) => {
-                return direct.set_cache_limit(limit);
+                direct.set_cache_limit(limit)
             },
             NodeType::Btree(btree) => {
-                return btree.set_cache_limit(limit);
+                btree.set_cache_limit(limit)
             },
         }
     }
@@ -816,10 +813,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         match &self.inner {
             NodeType::Direct(_) => {
                 assert!(self.block_loader.is_some());
-                return self.block_loader.as_ref().unwrap().clone();
+                self.block_loader.as_ref().unwrap().clone()
             },
             NodeType::Btree(btree) => {
-                return btree.block_loader.clone();
+                btree.block_loader.clone()
             },
         }
     }
@@ -829,10 +826,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         match &self.inner {
             NodeType::Direct(_) => {
                 assert!(self.node_tiered_cache.is_some());
-                return self.node_tiered_cache.as_ref().unwrap().clone();
+                self.node_tiered_cache.as_ref().unwrap().clone()
             },
             NodeType::Btree(btree) => {
-                return btree.node_tiered_cache.clone();
+                btree.node_tiered_cache.clone()
             },
         }
     }
@@ -867,9 +864,9 @@ impl<'a, 'b, K, V, P, L, C> NonLeafNodeIter<'a, 'b, K, V, P, L, C>
         };
 
         Self {
-            bmap: bmap,
+            bmap,
             last_root_node_index: 0,
-            root_node_cap_or_nchild: root_node_cap_or_nchild,
+            root_node_cap_or_nchild,
             last_btree_node_index: 0,
             last_btree_node: None,
             btree_node_backlog: VecDeque::new(),
@@ -895,11 +892,11 @@ impl<'a, 'b, K, V, P, L, C> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L, C>
         match &self.bmap.inner {
             NodeType::Direct(_) => {
                 // direct node is always leaf node
-                return None;
+                None
             },
             NodeType::Btree(btree) => {
                 // try working on root node
-                for idx in self.last_root_node_index..self.root_node_cap_or_nchild {
+                if let Some(idx) = (self.last_root_node_index..self.root_node_cap_or_nchild).next() {
                     let node = BtreeNode::<K, V, P>::from_slice(self.bmap.as_slice());
                     let id = *node.get_val::<P>(idx);
                     assert!(!id.is_invalid());
@@ -961,7 +958,7 @@ impl<'a, 'b, K, V, P, L, C> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L, C>
                     // will fetch next available node from backlog next time
                     self.last_btree_node = None;
                 }
-                return Some(id);
+                Some(id)
             },
         }
     }
