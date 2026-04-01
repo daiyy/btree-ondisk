@@ -173,9 +173,9 @@ impl<'a, K, V, P> DirectMap<'a, K, V, P>
         v.extend_from_slice(data);
         Self {
             #[cfg(feature = "rc")]
-            root: Rc::new(DirectNode::<V>::from_slice(&v)),
+            root: Rc::new(DirectNode::<V>::from_slice(&mut v)),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(DirectNode::<V>::from_slice(&v))),
+            root: Arc::new(Box::new(DirectNode::<V>::from_slice(&mut v))),
             data: v,
             #[cfg(feature = "rc")]
             last_seq: RefCell::new(P::invalid_value()),

@@ -91,10 +91,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         C: NodeCache<P>,
 {
     #[maybe_async::maybe_async]
-    async fn convert_and_insert(&mut self, data: Vec<u8>, meta_block_size: usize, last_seq: P, limit: usize, key: K, val: V) -> Result<()> {
+    async fn convert_and_insert(&mut self, mut data: Vec<u8>, meta_block_size: usize, last_seq: P, limit: usize, key: K, val: V) -> Result<()> {
         // collect all valid value from old direct root
         let mut old_kv = Vec::new();
-        let direct = DirectNode::<V>::from_slice(&data);
+        let direct = DirectNode::<V>::from_slice(&mut data);
         for i in 0..direct.get_capacity() {
             let val = direct.get_val(i);
             if !val.is_invalid() {
@@ -109,9 +109,9 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         v[0] = BTREE_NODE_FLAG_LEAF | BTREE_NODE_FLAG_LARGE;
         let mut btree = BtreeMap {
             #[cfg(feature = "rc")]
-            root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&v))),
+            root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&mut v))),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&v))),
+            root: Arc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&mut v))),
             data: v,
             #[cfg(feature = "rc")]
             nodes: RefCell::new(HashMap::new()),
@@ -208,12 +208,12 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     #[maybe_async::maybe_async]
     async fn convert_to_direct(&mut self, _key: &K, input: &Vec<(K, V)>,
             root_node_size: usize, user_data: u32, last_seq: P, limit: usize, block_loader: L, node_tiered_cache: C) -> Result<()> {
-        let v = vec![0; root_node_size];
+        let mut v = vec![0; root_node_size];
         let direct = DirectMap {
             #[cfg(feature = "rc")]
-            root: Rc::new(DirectNode::<V>::from_slice(&v)),
+            root: Rc::new(DirectNode::<V>::from_slice(&mut v)),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(DirectNode::<V>::from_slice(&v))),
+            root: Arc::new(Box::new(DirectNode::<V>::from_slice(&mut v))),
             data: v,
             #[cfg(feature = "rc")]
             last_seq: RefCell::new(last_seq),
@@ -265,9 +265,9 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
                 root_node_size, meta_block_size / 2);
         }
         // allocate temp space to init a root node as direct
-        let data = vec![0; root_node_size];
+        let mut data = vec![0; root_node_size];
         // init direct root node at level 1
-        let root = DirectNode::<V>::from_slice(&data);
+        let root = DirectNode::<V>::from_slice(&mut data);
         // flags = 0, level = 1, nchild = 0;
         root.init(0, 1, 0);
 
@@ -729,7 +729,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
 
     /// Read in root node from extenal buffer.
     pub fn read(buf: &[u8], meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Self {
-        let root = BtreeNode::<K, V, P>::from_slice(buf);
+        let root = BtreeNode::<K, V, P>::from_slice_ref(buf);
         if root.is_large() {
             return Self::new_btree(buf, meta_block_size, block_loader, node_tiered_cache);
         }
@@ -855,11 +855,11 @@ impl<'a, 'b, K, V, P, L, C> NonLeafNodeIter<'a, 'b, K, V, P, L, C>
         C: NodeCache<P> + Clone,
 {
     fn new(bmap: &'b BMap<'a, K, V, P, L, C>) -> Self {
-        let root = BtreeNode::<K, V, P>::from_slice(bmap.as_slice());
+        let root = BtreeNode::<K, V, P>::from_slice_ref(bmap.as_slice());
         let root_node_cap_or_nchild = if root.is_large() {
             root.get_nchild()
         } else {
-            let root = DirectNode::<V>::from_slice(bmap.as_slice());
+            let root = DirectNode::<V>::from_slice_ref(bmap.as_slice());
             root.get_capacity()
         };
 
@@ -897,7 +897,7 @@ impl<'a, 'b, K, V, P, L, C> Iterator for NonLeafNodeIter<'a, 'b, K, V, P, L, C>
             NodeType::Btree(btree) => {
                 // try working on root node
                 if let Some(idx) = (self.last_root_node_index..self.root_node_cap_or_nchild).next() {
-                    let node = BtreeNode::<K, V, P>::from_slice(self.bmap.as_slice());
+                    let node = BtreeNode::<K, V, P>::from_slice_ref(self.bmap.as_slice());
                     let id = *node.get_val::<P>(idx);
                     assert!(!id.is_invalid());
                     if node.get_level() > BTREE_NODE_LEVEL_MIN {

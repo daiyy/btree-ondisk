@@ -29,17 +29,13 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         K: Copy + fmt::Display + std::cmp::PartialOrd,
         V: Copy + fmt::Display
 {
-    pub fn from_slice(buf: &[u8]) -> Self {
-        let len = buf.len();
+    unsafe fn from_raw_ptr(ptr: *mut u8, len: usize) -> Self {
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
-        let ptr = buf.as_ptr() as *mut u8;
-        let header = unsafe {
-            ptr.cast::<NodeHeader>().as_mut().unwrap()
-        };
+        let header = ptr.cast::<NodeHeader>().as_mut().unwrap();
 
         let key_size = std::mem::size_of::<K>();
         let val_size = std::mem::size_of::<V>();
@@ -47,13 +43,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         assert!(capacity >= header.nchildren as usize,
             "nchildren in header is large than it's capacity {} > {}", header.nchildren, capacity);
 
-        let keymap = unsafe {
-            std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity)
-        };
-
-        let valmap = unsafe {
-            std::slice::from_raw_parts_mut(ptr.add(hdr_size + capacity * key_size) as *mut V, capacity)
-        };
+        let keymap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity);
+        let valmap = std::slice::from_raw_parts_mut(ptr.add(hdr_size + capacity * key_size) as *mut V, capacity);
 
         Self {
             header,
@@ -68,6 +59,14 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         }
     }
 
+    pub fn from_slice(buf: &mut [u8]) -> Self {
+        unsafe { Self::from_raw_ptr(buf.as_mut_ptr(), buf.len()) }
+    }
+
+    pub fn from_slice_ref(buf: &[u8]) -> Self {
+        unsafe { Self::from_raw_ptr(buf.as_ptr() as *mut u8, buf.len()) }
+    }
+
     pub fn new(v: V, size: usize) -> Option<Self> {
         if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
             let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
@@ -75,7 +74,7 @@ impl<'a, K, V> BtreeNode<'a, K, V>
                 return None;
             }
 
-            let data = unsafe { std::slice::from_raw_parts(ptr, size) };
+            let data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
             let mut node = Self::from_slice(data);
             node.ptr = ptr;
             node.id = Some(v);
@@ -468,26 +467,20 @@ impl<'a, V> DirectNode<'a, V>
     where
         V: Copy + fmt::Display
 {
-    pub fn from_slice(buf: &[u8]) -> Self {
-        let len = buf.len();
+    unsafe fn from_raw_ptr(ptr: *mut u8, len: usize) -> Self {
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
-        let ptr = buf.as_ptr() as *mut u8;
-        let header = unsafe {
-            ptr.cast::<NodeHeader>().as_mut().unwrap()
-        };
+        let header = ptr.cast::<NodeHeader>().as_mut().unwrap();
 
         let val_size = std::mem::size_of::<V>();
         let capacity = (len - hdr_size) / val_size;
         assert!(capacity >= header.nchildren as usize,
             "nchildren in header is large than it's capacity {} > {}", header.nchildren, capacity);
 
-        let valmap = unsafe {
-            std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut V, capacity)
-        };
+        let valmap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut V, capacity);
 
         Self {
             header,
@@ -500,6 +493,14 @@ impl<'a, V> DirectNode<'a, V>
         }
     }
 
+    pub fn from_slice(buf: &mut [u8]) -> Self {
+        unsafe { Self::from_raw_ptr(buf.as_mut_ptr(), buf.len()) }
+    }
+
+    pub fn from_slice_ref(buf: &[u8]) -> Self {
+        unsafe { Self::from_raw_ptr(buf.as_ptr() as *mut u8, buf.len()) }
+    }
+
     pub fn new(size: usize) -> Option<Self> {
         if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
             let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
@@ -507,7 +508,7 @@ impl<'a, V> DirectNode<'a, V>
                 return None;
             }
 
-            let data = unsafe { std::slice::from_raw_parts(ptr, size) };
+            let data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
             let mut node = Self::from_slice(data);
             node.ptr = ptr;
             return Some(node);

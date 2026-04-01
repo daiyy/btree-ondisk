@@ -988,9 +988,9 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         v.extend_from_slice(data);
         Self {
             #[cfg(feature = "rc")]
-            root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&v))),
+            root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&mut v))),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&v))),
+            root: Arc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&mut v))),
             data: v,
             #[cfg(feature = "rc")]
             nodes: RefCell::new(HashMap::new()),

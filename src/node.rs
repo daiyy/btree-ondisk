@@ -47,17 +47,13 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         V: Copy + fmt::Display + NodeValue,
         P: Copy + fmt::Display + NodeValue,
 {
-    pub fn from_slice(buf: &[u8]) -> Self {
-        let len = buf.len();
+    unsafe fn from_raw_ptr(ptr: *mut u8, len: usize) -> Self {
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
-        let ptr = buf.as_ptr() as *mut u8;
-        let header = unsafe {
-            ptr.cast::<NodeHeader>().as_mut().unwrap()
-        };
+        let header = ptr.cast::<NodeHeader>().as_mut().unwrap();
 
         let key_size = std::mem::size_of::<K>();
         let val_size = if header.flags & BTREE_NODE_FLAG_LEAF > 0 {
@@ -69,13 +65,8 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         assert!(capacity >= header.nchildren as usize,
             "nchildren in header is large than it's capacity {} > {}", header.nchildren, capacity);
 
-        let keymap = unsafe {
-            std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity)
-        };
-
-        let valptr = unsafe {
-            ptr.add(hdr_size + capacity * key_size)
-        };
+        let keymap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity);
+        let valptr = ptr.add(hdr_size + capacity * key_size);
 
         Self {
             header,
@@ -91,6 +82,19 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         }
     }
 
+    pub fn from_slice(buf: &mut [u8]) -> Self {
+        unsafe { Self::from_raw_ptr(buf.as_mut_ptr(), buf.len()) }
+    }
+
+    /// Construct a read-only view from an immutable slice.
+    ///
+    /// SAFETY: The returned node must only be used for read operations
+    /// (e.g. is_large(), get_level(), get_nchild(), get_val()).
+    /// Calling any setter method on it is undefined behavior.
+    pub fn from_slice_ref(buf: &[u8]) -> Self {
+        unsafe { Self::from_raw_ptr(buf.as_ptr() as *mut u8, buf.len()) }
+    }
+
     pub fn new(size: usize) -> Option<Self> {
         if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
             let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
@@ -98,7 +102,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
                 return None;
             }
 
-            let data = unsafe { std::slice::from_raw_parts(ptr, size) };
+            let data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
             let mut node = Self::from_slice(data);
             node.ptr = ptr;
             node.id = P::invalid_value();
@@ -689,26 +693,20 @@ impl<'a, V> DirectNode<'a, V>
     where
         V: Copy + fmt::Display
 {
-    pub fn from_slice(buf: &[u8]) -> Self {
-        let len = buf.len();
+    unsafe fn from_raw_ptr(ptr: *mut u8, len: usize) -> Self {
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
-        let ptr = buf.as_ptr() as *mut u8;
-        let header = unsafe {
-            ptr.cast::<NodeHeader>().as_mut().unwrap()
-        };
+        let header = ptr.cast::<NodeHeader>().as_mut().unwrap();
 
         let val_size = std::mem::size_of::<V>();
         let capacity = (len - hdr_size) / val_size;
         assert!(capacity >= header.nchildren as usize,
             "nchildren in header is large than it's capacity {} > {}", header.nchildren, capacity);
 
-        let valmap = unsafe {
-            std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut V, capacity)
-        };
+        let valmap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut V, capacity);
 
         Self {
             header,
@@ -721,6 +719,18 @@ impl<'a, V> DirectNode<'a, V>
         }
     }
 
+    pub fn from_slice(buf: &mut [u8]) -> Self {
+        unsafe { Self::from_raw_ptr(buf.as_mut_ptr(), buf.len()) }
+    }
+
+    /// Construct a read-only view from an immutable slice.
+    ///
+    /// SAFETY: The returned node must only be used for read operations.
+    /// Calling any setter method on it is undefined behavior.
+    pub fn from_slice_ref(buf: &[u8]) -> Self {
+        unsafe { Self::from_raw_ptr(buf.as_ptr() as *mut u8, buf.len()) }
+    }
+
     pub fn new(size: usize) -> Option<Self> {
         if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
             let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
@@ -728,7 +738,7 @@ impl<'a, V> DirectNode<'a, V>
                 return None;
             }
 
-            let data = unsafe { std::slice::from_raw_parts(ptr, size) };
+            let data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
             let mut node = Self::from_slice(data);
             node.ptr = ptr;
             return Some(node);
