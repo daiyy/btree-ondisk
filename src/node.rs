@@ -140,8 +140,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         }
     }
 
-    #[allow(clippy::mut_from_ref)]
-    pub fn as_u8_mut(&self) -> &mut [u8] {
+    pub fn as_u8_mut(&mut self) -> &mut [u8] {
         unsafe {
             std::slice::from_raw_parts_mut(self.ptr as *mut u8, self.size)
         }
@@ -739,7 +738,7 @@ impl<'a, V> DirectNode<'a, V>
 
     pub fn copy_from_slice(buf: &[u8]) -> Option<Self> {
         let size = buf.len();
-        if let Some(n) = Self::new(size) {
+        if let Some(mut n) = Self::new(size) {
             // copy data from buf to inner data
             let data = n.as_u8_mut();
             data.copy_from_slice(buf);
@@ -800,8 +799,7 @@ impl<'a, V> DirectNode<'a, V>
         }
     }
 
-    #[allow(clippy::mut_from_ref)]
-    pub fn as_u8_mut(&self) -> &mut [u8] {
+    pub fn as_u8_mut(&mut self) -> &mut [u8] {
         unsafe {
             std::slice::from_raw_parts_mut(self.ptr as *mut u8, self.size)
         }
