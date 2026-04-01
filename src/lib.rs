@@ -5,6 +5,10 @@
 //! Converted to btree based map when key exceed direct node's capacity.
 //!
 //! Individual btree node in the map can be load back from backend storage by [`BlockLoader`].
+
+#[cfg(all(feature = "rc", feature = "arc"))]
+compile_error!("features `rc` and `arc` are mutually exclusive");
+
 use std::fmt;
 use std::io::Result;
 
