@@ -34,6 +34,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         if len < hdr_size {
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
+        assert!((ptr as usize).is_multiple_of(std::mem::align_of::<NodeHeader>()),
+            "buffer pointer {:p} is not aligned to {}", ptr, std::mem::align_of::<NodeHeader>());
 
         let header = ptr.cast::<NodeHeader>().as_mut().unwrap();
 
@@ -475,6 +477,8 @@ impl<'a, V> DirectNode<'a, V>
         if len < hdr_size {
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
+        assert!((ptr as usize).is_multiple_of(std::mem::align_of::<NodeHeader>()),
+            "buffer pointer {:p} is not aligned to {}", ptr, std::mem::align_of::<NodeHeader>());
 
         let header = ptr.cast::<NodeHeader>().as_mut().unwrap();
 
