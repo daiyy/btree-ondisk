@@ -640,7 +640,7 @@ impl<'a, K, V, P> Drop for BtreeNode<'a, K, V, P> {
 
 impl<'a, K, V, P> PartialEq for BtreeNode<'a, K, V, P> {
     fn eq(&self, other: &Self) -> bool {
-        std::ptr::addr_of!(self.header) == std::ptr::addr_of!(other.header)
+        std::ptr::eq(self.header, other.header)
     }
 }
 
