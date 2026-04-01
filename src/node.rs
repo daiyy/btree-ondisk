@@ -280,15 +280,6 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     }
 
     #[inline]
-    pub fn set_nchild_use_p(&self, c: usize) {
-        let nchild_ptr: *mut u16 = &self.header.nchildren as *const _ as *mut u16;
-        let nchild = c as u16;
-        unsafe {
-            std::ptr::copy::<u16>(ptr::addr_of!(nchild), nchild_ptr, 1);
-        }
-    }
-
-    #[inline]
     pub fn get_userdata(&self) -> u32 {
         self.header.userdata
     }
@@ -475,8 +466,8 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         lnchild += n;
         rnchild -= n;
 
-        left.set_nchild_use_p(lnchild);
-        right.set_nchild_use_p(rnchild);
+        left.set_nchild(lnchild);
+        right.set_nchild(rnchild);
     }
 
     pub fn move_left(left: &BtreeNode<K, V, P>, right: &BtreeNode<K, V, P>, n: usize) {
@@ -525,8 +516,8 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         lnchild -= n;
         rnchild += n;
 
-        left.set_nchild_use_p(lnchild);
-        right.set_nchild_use_p(rnchild);
+        left.set_nchild(lnchild);
+        right.set_nchild(rnchild);
     }
 
     pub fn move_right(left: &BtreeNode<K, V, P>, right: &BtreeNode<K, V, P>, n: usize) {

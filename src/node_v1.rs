@@ -181,16 +181,10 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     }
 
     #[inline]
-    pub fn set_nchild(&mut self, c: usize) {
-        self.header.nchildren = c as u16;
-    }
-
-    #[inline]
-    pub fn set_nchild_use_p(&self, c: usize) {
-        let nchild_ptr: *mut u16 = &self.header.nchildren as *const _ as *mut u16;
-        let nchild = c as u16;
+    pub fn set_nchild(&self, c: usize) {
+        let ptr = ptr::addr_of!(self.header.nchildren) as *mut u16;
         unsafe {
-            std::ptr::copy::<u16>(ptr::addr_of!(nchild), nchild_ptr, 1);
+            ptr::write(ptr, c as u16);
         }
     }
 
@@ -289,8 +283,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         lnchild += n;
         rnchild -= n;
 
-        left.set_nchild_use_p(lnchild);
-        right.set_nchild_use_p(rnchild);
+        left.set_nchild(lnchild);
+        right.set_nchild(rnchild);
     }
 
     // reserve space at head of right for n slot
@@ -323,8 +317,8 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         lnchild -= n;
         rnchild += n;
 
-        left.set_nchild_use_p(lnchild);
-        right.set_nchild_use_p(rnchild);
+        left.set_nchild(lnchild);
+        right.set_nchild(rnchild);
     }
 
     // lookup key
