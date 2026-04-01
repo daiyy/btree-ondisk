@@ -330,6 +330,9 @@ impl<'a, K, V> BtreeNode<'a, K, V>
     //   - (found, index)
     //   - (notfound, index)
     pub fn lookup(&self, key: &K) -> (bool, usize) {
+        if self.header.nchildren == 0 {
+            return (false, 0);
+        }
         let mut low: isize = 0;
         let mut high: isize = (self.header.nchildren - 1) as isize;
         let mut s = false;
