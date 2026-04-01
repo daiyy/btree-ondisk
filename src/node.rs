@@ -1,5 +1,6 @@
 use std::ptr;
 use std::fmt;
+use std::cell::Cell;
 use std::marker::PhantomPinned;
 use std::marker::PhantomData;
 use crate::ondisk::NodeHeader;
@@ -30,7 +31,7 @@ pub struct BtreeNode<'a, K, V, P> {
     ptr: *const u8,
     size: usize,
     id: P,
-    dirty: bool,
+    dirty: Cell<bool>,
     _pin: PhantomPinned,
     phantom: PhantomData<V>,
 }
@@ -84,7 +85,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             ptr: std::ptr::null(),
             size: len,
             id: P::invalid_value(),
-            dirty: false,
+            dirty: Cell::new(false),
             _pin: PhantomPinned,
             phantom: PhantomData,
         }
@@ -418,23 +419,17 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn is_dirty(&self) -> bool {
-        self.dirty
+        self.dirty.get()
     }
 
     #[inline]
     pub fn mark_dirty(&self) {
-        let ptr = ptr::addr_of!(self.dirty) as *mut bool;
-        unsafe {
-            ptr::write_volatile(ptr, true);
-        }
+        self.dirty.set(true)
     }
 
     #[inline]
     pub fn clear_dirty(&self) {
-        let ptr = ptr::addr_of!(self.dirty) as *mut bool;
-        unsafe {
-            ptr::write_volatile(ptr, false);
-        }
+        self.dirty.set(false)
     }
 
     #[inline]
@@ -682,7 +677,7 @@ pub struct DirectNode<'a, V> {
     capacity: usize,
     ptr: *const u8,
     size: usize,
-    dirty: bool,
+    dirty: Cell<bool>,
     _pin: PhantomPinned,
 }
 
@@ -722,7 +717,7 @@ impl<'a, V> DirectNode<'a, V>
             capacity,
             ptr: std::ptr::null(),
             size: len,
-            dirty: false,
+            dirty: Cell::new(false),
             _pin: PhantomPinned,
         }
     }
