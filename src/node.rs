@@ -16,6 +16,52 @@ pub const BTREE_NODE_LEVEL_LEAF: usize = BTREE_NODE_LEVEL_MIN;
 
 const MIN_ALIGNED: usize = 8;
 
+/// Owned aligned memory buffer for node storage.
+///
+/// Handles allocation and deallocation of aligned memory.
+/// When `ptr` is null, the buffer is a non-owning view (e.g. from `from_slice`).
+#[derive(Debug)]
+pub(crate) struct AlignedBuffer {
+    ptr: *mut u8,
+    size: usize,
+}
+
+impl AlignedBuffer {
+    /// Allocate a new zeroed buffer of the given size.
+    fn new(size: usize) -> Option<Self> {
+        let layout = std::alloc::Layout::from_size_align(size, MIN_ALIGNED).ok()?;
+        let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
+        if ptr.is_null() {
+            return None;
+        }
+        Some(Self { ptr, size })
+    }
+
+    /// Create a non-owning empty buffer (will not be deallocated on drop).
+    fn non_owning() -> Self {
+        Self { ptr: std::ptr::null_mut(), size: 0 }
+    }
+
+    fn as_ref(&self) -> &[u8] {
+        unsafe { std::slice::from_raw_parts(self.ptr, self.size) }
+    }
+
+    fn as_mut(&mut self) -> &mut [u8] {
+        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.size) }
+    }
+}
+
+impl Drop for AlignedBuffer {
+    fn drop(&mut self) {
+        if self.ptr.is_null() {
+            return;
+        }
+        if let Ok(layout) = std::alloc::Layout::from_size_align(self.size, MIN_ALIGNED) {
+            unsafe { std::alloc::dealloc(self.ptr, layout) };
+        }
+    }
+}
+
 /// btree node descriptor for memory pointer, normally a page
 ///
 /// SAFETY:
@@ -29,8 +75,7 @@ pub struct BtreeNode<'a, K, V, P> {
     keymap: &'a mut [K],
     valptr: *mut u8,
     capacity: usize,    // kv capacity of this btree node
-    ptr: *const u8,
-    size: usize,
+    buf: AlignedBuffer,
     id: P,
     dirty: Cell<bool>,
     _pin: PhantomPinned,
@@ -81,8 +126,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             keymap,
             valptr,
             capacity,
-            ptr: std::ptr::null(),
-            size: len,
+            buf: AlignedBuffer::non_owning(),
             id: P::invalid_value(),
             dirty: Cell::new(false),
             _pin: PhantomPinned,
@@ -104,58 +148,36 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     }
 
     pub fn new(size: usize) -> Option<Self> {
-        if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
-            let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
-            if ptr.is_null() {
-                return None;
-            }
-
-            let data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
-            let mut node = Self::from_slice(data).ok()?;
-            node.ptr = ptr;
-            node.id = P::invalid_value();
-            return Some(node);
-        };
-        None
+        let ab = AlignedBuffer::new(size)?;
+        let data = unsafe { std::slice::from_raw_parts_mut(ab.ptr, ab.size) };
+        let mut node = Self::from_slice(data).ok()?;
+        node.buf = ab;
+        node.id = P::invalid_value();
+        Some(node)
     }
 
     pub fn new_with_id(size: usize, id: &P) -> Option<Self> {
-        if let Some(node) = Self::new(size) {
-            node.set_id(*id);
-            return Some(node);
-        }
-        None
+        let node = Self::new(size)?;
+        node.set_id(*id);
+        Some(node)
     }
 
     pub fn copy_from_slice(id: P, buf: &[u8]) -> Option<Self> {
-        let size = buf.len();
-        if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
-            let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
-            if ptr.is_null() {
-                return None;
-            }
-
-            let data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
-            // copy data from buf to inner data
-            data.copy_from_slice(buf);
-            let mut node = Self::from_slice(data).ok()?;
-            node.ptr = ptr;
-            node.id = id;
-            return Some(node);
-        };
-        None
+        let ab = AlignedBuffer::new(buf.len())?;
+        let data = unsafe { std::slice::from_raw_parts_mut(ab.ptr, ab.size) };
+        data.copy_from_slice(buf);
+        let mut node = Self::from_slice(data).ok()?;
+        node.buf = ab;
+        node.id = id;
+        Some(node)
     }
 
     pub fn as_u8_ref(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(self.ptr, self.size)
-        }
+        self.buf.as_ref()
     }
 
     pub fn as_u8_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            std::slice::from_raw_parts_mut(self.ptr as *mut u8, self.size)
-        }
+        self.buf.as_mut()
     }
 
     #[inline]
@@ -309,7 +331,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         let hdr_size = std::mem::size_of::<NodeHeader>();
         let key_size = std::mem::size_of::<K>();
         let val_size = std::mem::size_of::<V>();
-        (self.size - hdr_size) / (key_size + val_size)
+        (self.buf.size - hdr_size) / (key_size + val_size)
     }
 
     #[inline]
@@ -348,7 +370,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     // re-calc capacity and valptr by flags
     pub(crate) fn do_update(&mut self) {
-        let len = self.size;
+        let len = self.buf.size;
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
@@ -378,7 +400,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     // re-calc capacity and valptr based on X
     pub(crate) fn do_reinit<X>(&mut self) {
-        let len = self.size;
+        let len = self.buf.size;
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
@@ -626,16 +648,6 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     }
 }
 
-impl<'a, K, V, P> Drop for BtreeNode<'a, K, V, P> {
-    fn drop(&mut self) {
-        if self.ptr.is_null() {
-            return;
-        }
-        if let Ok(layout) = std::alloc::Layout::from_size_align(self.size, MIN_ALIGNED) {
-            unsafe { std::alloc::dealloc(self.ptr as *mut u8, layout) };
-        }
-    }
-}
 
 impl<'a, K, V, P> PartialEq for BtreeNode<'a, K, V, P> {
     fn eq(&self, other: &Self) -> bool {
@@ -680,8 +692,7 @@ pub struct DirectNode<'a, V> {
     header: &'a mut NodeHeader,
     valmap: &'a mut [V],
     capacity: usize,
-    ptr: *const u8,
-    size: usize,
+    buf: AlignedBuffer,
     dirty: Cell<bool>,
     _pin: PhantomPinned,
 }
@@ -721,8 +732,7 @@ impl<'a, V> DirectNode<'a, V>
             header,
             valmap,
             capacity,
-            ptr: std::ptr::null(),
-            size: len,
+            buf: AlignedBuffer::non_owning(),
             dirty: Cell::new(false),
             _pin: PhantomPinned,
         })
@@ -741,18 +751,11 @@ impl<'a, V> DirectNode<'a, V>
     }
 
     pub fn new(size: usize) -> Option<Self> {
-        if let Ok(aligned_layout) = std::alloc::Layout::from_size_align(size, MIN_ALIGNED) {
-            let ptr = unsafe { std::alloc::alloc_zeroed(aligned_layout) };
-            if ptr.is_null() {
-                return None;
-            }
-
-            let data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
-            let mut node = Self::from_slice(data).ok()?;
-            node.ptr = ptr;
-            return Some(node);
-        };
-        None
+        let ab = AlignedBuffer::new(size)?;
+        let data = unsafe { std::slice::from_raw_parts_mut(ab.ptr, ab.size) };
+        let mut node = Self::from_slice(data).ok()?;
+        node.buf = ab;
+        Some(node)
     }
 
     pub fn copy_from_slice(buf: &[u8]) -> Option<Self> {
@@ -813,26 +816,11 @@ impl<'a, V> DirectNode<'a, V>
     }
 
     pub fn as_u8_ref(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(self.ptr, self.size)
-        }
+        self.buf.as_ref()
     }
 
     pub fn as_u8_mut(&mut self) -> &mut [u8] {
-        unsafe {
-            std::slice::from_raw_parts_mut(self.ptr as *mut u8, self.size)
-        }
-    }
-}
-
-impl<'a, V> Drop for DirectNode<'a, V> {
-    fn drop(&mut self) {
-        if self.ptr.is_null() {
-            return;
-        }
-        if let Ok(layout) = std::alloc::Layout::from_size_align(self.size, MIN_ALIGNED) {
-            unsafe { std::alloc::dealloc(self.ptr as *mut u8, layout) };
-        }
+        self.buf.as_mut()
     }
 }
 
