@@ -1,6 +1,7 @@
 use std::ptr;
 use std::fmt;
 use std::cell::Cell;
+use std::io::{Error, ErrorKind, Result};
 use std::marker::PhantomPinned;
 use std::marker::PhantomData;
 use crate::ondisk::NodeHeader;
@@ -47,13 +48,16 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         V: Copy + fmt::Display + NodeValue,
         P: Copy + fmt::Display + NodeValue,
 {
-    unsafe fn from_raw_ptr(ptr: *mut u8, len: usize) -> Self {
+    unsafe fn from_raw_ptr(ptr: *mut u8, len: usize) -> Result<Self> {
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
-            panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
+            return Err(Error::new(ErrorKind::InvalidInput,
+                format!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size)));
         }
-        assert!((ptr as usize).is_multiple_of(std::mem::align_of::<NodeHeader>()),
-            "buffer pointer {:p} is not aligned to {}", ptr, std::mem::align_of::<NodeHeader>());
+        if !(ptr as usize).is_multiple_of(std::mem::align_of::<NodeHeader>()) {
+            return Err(Error::new(ErrorKind::InvalidInput,
+                format!("buffer pointer {:p} is not aligned to {}", ptr, std::mem::align_of::<NodeHeader>())));
+        }
 
         let header = ptr.cast::<NodeHeader>().as_mut().unwrap();
 
@@ -64,13 +68,15 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             std::mem::size_of::<P>()
         };
         let capacity = (len - hdr_size) / (key_size + val_size);
-        assert!(capacity >= header.nchildren as usize,
-            "nchildren in header is large than it's capacity {} > {}", header.nchildren, capacity);
+        if capacity < header.nchildren as usize {
+            return Err(Error::new(ErrorKind::InvalidData,
+                format!("nchildren in header is larger than its capacity {} > {}", header.nchildren, capacity)));
+        }
 
         let keymap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity);
         let valptr = ptr.add(hdr_size + capacity * key_size);
 
-        Self {
+        Ok(Self {
             header,
             keymap,
             valptr,
@@ -81,10 +87,10 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             dirty: Cell::new(false),
             _pin: PhantomPinned,
             phantom: PhantomData,
-        }
+        })
     }
 
-    pub fn from_slice(buf: &mut [u8]) -> Self {
+    pub fn from_slice(buf: &mut [u8]) -> Result<Self> {
         unsafe { Self::from_raw_ptr(buf.as_mut_ptr(), buf.len()) }
     }
 
@@ -93,7 +99,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     /// SAFETY: The returned node must only be used for read operations
     /// (e.g. is_large(), get_level(), get_nchild(), get_val()).
     /// Calling any setter method on it is undefined behavior.
-    pub fn from_slice_ref(buf: &[u8]) -> Self {
+    pub fn from_slice_ref(buf: &[u8]) -> Result<Self> {
         unsafe { Self::from_raw_ptr(buf.as_ptr() as *mut u8, buf.len()) }
     }
 
@@ -105,7 +111,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             }
 
             let data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
-            let mut node = Self::from_slice(data);
+            let mut node = Self::from_slice(data).ok()?;
             node.ptr = ptr;
             node.id = P::invalid_value();
             return Some(node);
@@ -132,7 +138,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             let data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
             // copy data from buf to inner data
             data.copy_from_slice(buf);
-            let mut node = Self::from_slice(data);
+            let mut node = Self::from_slice(data).ok()?;
             node.ptr = ptr;
             node.id = id;
             return Some(node);
@@ -689,24 +695,29 @@ impl<'a, V> DirectNode<'a, V>
     where
         V: Copy + fmt::Display
 {
-    unsafe fn from_raw_ptr(ptr: *mut u8, len: usize) -> Self {
+    unsafe fn from_raw_ptr(ptr: *mut u8, len: usize) -> Result<Self> {
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
-            panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
+            return Err(Error::new(ErrorKind::InvalidInput,
+                format!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size)));
         }
-        assert!((ptr as usize).is_multiple_of(std::mem::align_of::<NodeHeader>()),
-            "buffer pointer {:p} is not aligned to {}", ptr, std::mem::align_of::<NodeHeader>());
+        if !(ptr as usize).is_multiple_of(std::mem::align_of::<NodeHeader>()) {
+            return Err(Error::new(ErrorKind::InvalidInput,
+                format!("buffer pointer {:p} is not aligned to {}", ptr, std::mem::align_of::<NodeHeader>())));
+        }
 
         let header = ptr.cast::<NodeHeader>().as_mut().unwrap();
 
         let val_size = std::mem::size_of::<V>();
         let capacity = (len - hdr_size) / val_size;
-        assert!(capacity >= header.nchildren as usize,
-            "nchildren in header is large than it's capacity {} > {}", header.nchildren, capacity);
+        if capacity < header.nchildren as usize {
+            return Err(Error::new(ErrorKind::InvalidData,
+                format!("nchildren in header is larger than its capacity {} > {}", header.nchildren, capacity)));
+        }
 
         let valmap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut V, capacity);
 
-        Self {
+        Ok(Self {
             header,
             valmap,
             capacity,
@@ -714,10 +725,10 @@ impl<'a, V> DirectNode<'a, V>
             size: len,
             dirty: Cell::new(false),
             _pin: PhantomPinned,
-        }
+        })
     }
 
-    pub fn from_slice(buf: &mut [u8]) -> Self {
+    pub fn from_slice(buf: &mut [u8]) -> Result<Self> {
         unsafe { Self::from_raw_ptr(buf.as_mut_ptr(), buf.len()) }
     }
 
@@ -725,7 +736,7 @@ impl<'a, V> DirectNode<'a, V>
     ///
     /// SAFETY: The returned node must only be used for read operations.
     /// Calling any setter method on it is undefined behavior.
-    pub fn from_slice_ref(buf: &[u8]) -> Self {
+    pub fn from_slice_ref(buf: &[u8]) -> Result<Self> {
         unsafe { Self::from_raw_ptr(buf.as_ptr() as *mut u8, buf.len()) }
     }
 
@@ -737,7 +748,7 @@ impl<'a, V> DirectNode<'a, V>
             }
 
             let data = unsafe { std::slice::from_raw_parts_mut(ptr, size) };
-            let mut node = Self::from_slice(data);
+            let mut node = Self::from_slice(data).ok()?;
             node.ptr = ptr;
             return Some(node);
         };

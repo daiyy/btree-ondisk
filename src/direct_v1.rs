@@ -92,7 +92,7 @@ impl<'a, K, V> DirectMap<'a, K, V>
         let mut v = Vec::with_capacity(data.len());
         v.extend_from_slice(data);
         Self {
-            root: Rc::new(RefCell::new(DirectNode::<V>::from_slice(&mut v))),
+            root: Rc::new(RefCell::new(DirectNode::<V>::from_slice(&mut v).expect("failed to init root node"))),
             data: v,
             last_seq: RefCell::new(V::invalid_value()),
             dirty: RefCell::new(false),
