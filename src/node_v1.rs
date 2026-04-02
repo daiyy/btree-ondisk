@@ -110,7 +110,6 @@ impl<'a, K, V> BtreeNode<'a, K, V>
         }
     }
 
-    #[allow(clippy::mut_from_ref)]
     pub fn as_u8_mut(&mut self) -> &mut [u8] {
         unsafe {
             std::slice::from_raw_parts_mut(self.ptr as *mut u8, self.size)
@@ -556,7 +555,6 @@ impl<'a, V> DirectNode<'a, V>
         }
     }
 
-    #[allow(clippy::mut_from_ref)]
     pub fn as_u8_mut(&mut self) -> &mut [u8] {
         unsafe {
             std::slice::from_raw_parts_mut(self.ptr as *mut u8, self.size)
