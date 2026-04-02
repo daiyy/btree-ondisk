@@ -38,7 +38,7 @@ impl<V: Send + Sync + Eq + std::hash::Hash + std::fmt::Display> BlockLoader<V> f
     }
 
     fn dup_from_new_path(self, _: &str) -> Self {
-        todo!()
+        self
     }
 }
 

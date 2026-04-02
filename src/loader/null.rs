@@ -7,10 +7,10 @@ pub struct NullBlockLoader;
 
 impl<V: Send> BlockLoader<V> for NullBlockLoader {
     async fn read(&self, _v: V, _buf: &mut [u8], _user_data: u32) -> Result<Vec<(V, Vec<u8>)>> {
-        todo!()
+        Ok(Vec::new())
     }
 
     fn dup_from_new_path(self, _: &str) -> Self {
-        todo!()
+        self
     }
 }
