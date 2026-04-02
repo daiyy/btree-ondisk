@@ -670,7 +670,7 @@ impl<'a, K, V, L> BtreeMap<'a, K, V, L>
         let mut v = Vec::with_capacity(data.len());
         v.extend_from_slice(data);
         Self {
-            root: Rc::new(RefCell::new(BtreeNode::<K, V>::from_slice(&mut v))),
+            root: Rc::new(RefCell::new(BtreeNode::<K, V>::from_slice(&mut v).expect("failed to init root node"))),
             data: v,
             nodes: RefCell::new(HashMap::new()),
             last_seq: RefCell::new(V::invalid_value()),
