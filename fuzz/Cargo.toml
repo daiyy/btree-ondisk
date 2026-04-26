@@ -1,0 +1,35 @@
+[package]
+name = "btree-ondisk-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.btree-ondisk]
+path = ".."
+
+[[bin]]
+name = "btree_node_from_slice"
+path = "fuzz_targets/btree_node_from_slice.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "direct_node_from_slice"
+path = "fuzz_targets/direct_node_from_slice.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bmap_read"
+path = "fuzz_targets/bmap_read.rs"
+test = false
+doc = false
+bench = false
