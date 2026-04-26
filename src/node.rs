@@ -55,6 +55,10 @@ impl AlignedBuffer {
         self.size
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.size == 0
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         self.as_ref()
     }

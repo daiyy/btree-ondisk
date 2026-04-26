@@ -280,11 +280,10 @@ async fn null_node_cache_methods() {
     let c = NullNodeCache;
     <NullNodeCache as NodeCache<u64>>::push(&c, &1u64, &[0u8; 4]);
     let mut buf = [0u8; 4];
-    assert_eq!(
-        <NullNodeCache as NodeCache<u64>>::load(&c, 1u64, &mut buf)
+    assert!(
+        !<NullNodeCache as NodeCache<u64>>::load(&c, 1u64, &mut buf)
             .await
-            .unwrap(),
-        false
+            .unwrap()
     );
     <NullNodeCache as NodeCache<u64>>::invalid(&c, &1u64);
     <NullNodeCache as NodeCache<u64>>::evict(&c);
