@@ -429,3 +429,29 @@ fn nonleafnode_iter_direct_arm() {
     let count = m.nonleafnode_iter().count();
     assert_eq!(count, 0);
 }
+
+// NonLeafNodeIter requires every node id to be a validly-assigned external
+// id (is_valid_extern_assign() == true). The library-level precondition is
+// that users have flushed the map once (lookup_dirty + assign_meta_node)
+// before calling the iterator.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn nonleafnode_iter_btree_arm() {
+    let mut m = null_bmap();
+    for k in 0..64u64 {
+        let _ = m.insert(k, k + 1).await.unwrap();
+    }
+    assert!(m.get_stat().btree);
+
+    // simulate a flush: assign every dirty node an external seq.
+    let dirty = m.lookup_dirty();
+    let mut seq = VALID_EXTERNAL_ASSIGN_MASK + 1u64;
+    for n in &dirty {
+        m.assign_meta_node(seq, n.clone()).await.unwrap();
+        seq += 1;
+    }
+    for n in dirty { n.clear_dirty(); }
+    m.clear_dirty();
+
+    let count = tokio::task::block_in_place(|| m.nonleafnode_iter().count());
+    assert!(count >= 1);
+}
