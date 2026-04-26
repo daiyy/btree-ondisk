@@ -20,8 +20,17 @@ pub struct MemoryBlockLoader<V> {
     meta_node_size: usize,
 }
 
-// force impl Sync for life easy
-unsafe impl<V> Sync for MemoryBlockLoader<V> {}
+// SAFETY:
+// Under the `arc` feature, inner is Arc<AtomicRefCell<HashMap<V, Vec<u8>>>>.
+// AtomicRefCell provides interior mutability with runtime borrow checking;
+// it is Sync when its contents are Send, which requires V: Send.
+// We additionally require V: Sync so that &MemoryBlockLoader can be shared
+// across threads safely.
+// Under the `rc` feature, the inner type is !Sync (Rc/RefCell), so this
+// impl is intentionally gated out and users must not share the loader
+// across threads.
+#[cfg(feature = "arc")]
+unsafe impl<V: Send + Sync> Sync for MemoryBlockLoader<V> {}
 
 impl<V: Send + Sync + Eq + std::hash::Hash + std::fmt::Display> BlockLoader<V> for MemoryBlockLoader<V>
     where

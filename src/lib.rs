@@ -9,6 +9,9 @@
 #[cfg(all(feature = "rc", feature = "arc"))]
 compile_error!("features `rc` and `arc` are mutually exclusive");
 
+#[cfg(all(feature = "rc", feature = "mt"))]
+compile_error!("feature `mt` requires `arc` (single-threaded `rc` cannot produce Send futures)");
+
 use std::fmt;
 use std::io::Result;
 
@@ -17,7 +20,6 @@ pub mod node;
 pub mod btree;
 mod direct;
 pub mod bmap;
-mod utils;
 mod loader;
 mod cache;
 pub use crate::loader::null::NullBlockLoader;

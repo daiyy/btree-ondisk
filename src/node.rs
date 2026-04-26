@@ -30,6 +30,11 @@ impl AlignedBuffer {
     /// Allocate a new zeroed buffer of the given size.
     fn new(size: usize) -> Option<Self> {
         let layout = std::alloc::Layout::from_size_align(size, MIN_ALIGNED).ok()?;
+        // SAFETY: `layout` has non-zero size when `size > 0`; when size is 0
+        // the layout's size is 0 and alloc_zeroed is UB — callers never
+        // construct zero-sized nodes in practice, but we still check for a
+        // null return below, which covers both allocation failure and the
+        // zero-size edge case if it ever occurs.
         let ptr = unsafe { std::alloc::alloc_zeroed(layout) };
         if ptr.is_null() {
             return None;
@@ -43,10 +48,15 @@ impl AlignedBuffer {
     }
 
     fn as_ref(&self) -> &[u8] {
+        // SAFETY: `ptr` and `size` came from a successful allocation in `new`
+        // (or ptr is null and size is 0 for a non-owning placeholder).
+        // `from_raw_parts` tolerates a non-null dangling ptr for size 0,
+        // but we only call as_ref on owning buffers.
         unsafe { std::slice::from_raw_parts(self.ptr, self.size) }
     }
 
     fn as_mut(&mut self) -> &mut [u8] {
+        // SAFETY: same as as_ref. Unique access is guaranteed by &mut self.
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.size) }
     }
 }
@@ -57,6 +67,8 @@ impl Drop for AlignedBuffer {
             return;
         }
         if let Ok(layout) = std::alloc::Layout::from_size_align(self.size, MIN_ALIGNED) {
+            // SAFETY: `ptr` was allocated with the identical `layout` in `new`
+            // and has not been freed yet (Drop runs once).
             unsafe { std::alloc::dealloc(self.ptr, layout) };
         }
     }
@@ -64,10 +76,28 @@ impl Drop for AlignedBuffer {
 
 /// btree node descriptor for memory pointer, normally a page
 ///
-/// SAFETY:
-///   node operations mutable by unsafe code,
-///   this works because all ops for same node are expected to be ran in a single thread
+/// # Safety invariants
 ///
+/// The node reinterprets a byte buffer as a fixed layout:
+///   `[NodeHeader][keymap: [K; capacity]][valmap: [V or P; capacity]]`
+/// where the choice between V and P depends on `header.flags & BTREE_NODE_FLAG_LEAF`.
+///
+/// All mutating methods take `&self` and perform writes through raw pointers
+/// (interior mutability). This is sound under the following invariants:
+///
+/// 1. The backing buffer (`buf`) outlives all internal pointers, or the node
+///    was constructed from an externally-owned buffer via `from_slice` and
+///    will not outlive that buffer.
+/// 2. The fields of `NodeHeader` (`flags`, `level`, `nchildren`, `userdata`)
+///    are plain `Copy` types with no interior references; writes through
+///    `ptr::write` are torn-read safe because each write targets a single
+///    primitive (`u8`/`u16`/`u32`).
+/// 3. On a single node, concurrent writes are forbidden. Under `rc` this is
+///    guaranteed by single-threaded execution; under `arc` the library
+///    serializes writes at higher levels (each node is held behind
+///    `Arc<Box<...>>` and external containers wrap it in `AtomicRefCell`).
+/// 4. `get_val<X>` / `set_val<X>` require the caller to pick `X == V` for
+///    leaf nodes and `X == P` for internal nodes. Mismatched `X` yields UB.
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub struct BtreeNode<'a, K, V, P> {
@@ -82,10 +112,17 @@ pub struct BtreeNode<'a, K, V, P> {
     phantom: PhantomData<V>,
 }
 
+// SAFETY:
+// A BtreeNode internally holds raw pointers (keymap slice, valptr) that alias
+// into `buf`. These raw pointers are logically owned by this struct. When the
+// generic parameters themselves are thread-safe (Send + Sync), sharing the
+// node across threads is sound provided the caller serializes mutation on
+// any given node (the library enforces this by holding each node behind
+// Arc<Box<...>> and using AtomicRefCell for its owning map).
 #[cfg(feature = "arc")]
-unsafe impl<'a, K, V, P> Send for BtreeNode<'a, K, V, P> {}
+unsafe impl<'a, K: Send, V: Send, P: Send> Send for BtreeNode<'a, K, V, P> {}
 #[cfg(feature = "arc")]
-unsafe impl<'a, K, V, P> Sync for BtreeNode<'a, K, V, P> {}
+unsafe impl<'a, K: Sync, V: Sync, P: Sync> Sync for BtreeNode<'a, K, V, P> {}
 
 impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     where
@@ -93,6 +130,15 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         V: Copy + fmt::Display + NodeValue,
         P: Copy + fmt::Display + NodeValue,
 {
+    /// Reinterpret `ptr[..len]` as a BtreeNode.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must be non-null and valid for reads and writes of `len` bytes.
+    /// - The memory region must remain valid and exclusively owned by the
+    ///   returned node for its lifetime.
+    /// - Alignment and minimum length are checked at runtime; callers don't
+    ///   have to pre-check, but if these checks fail an `Err` is returned.
     unsafe fn from_raw_ptr(ptr: *mut u8, len: usize) -> Result<Self> {
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
@@ -104,7 +150,10 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
                 format!("buffer pointer {:p} is not aligned to {}", ptr, std::mem::align_of::<NodeHeader>())));
         }
 
-        let header = ptr.cast::<NodeHeader>().as_mut().unwrap();
+        // SAFETY: ptr is non-null (checked via slice source), len >= hdr_size,
+        // and alignment is verified above. The reborrow lifetime is tied to `'a`
+        // by the returned struct's type parameter.
+        let header = &mut *ptr.cast::<NodeHeader>();
 
         let key_size = std::mem::size_of::<K>();
         let val_size = if header.flags & BTREE_NODE_FLAG_LEAF > 0 {
@@ -135,6 +184,9 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     }
 
     pub fn from_slice(buf: &mut [u8]) -> Result<Self> {
+        // SAFETY: `buf` is a valid mutable slice, so its pointer is non-null,
+        // aligned to at least u8, and covers `buf.len()` bytes. from_raw_ptr
+        // performs additional alignment/length checks before reinterpreting.
         unsafe { Self::from_raw_ptr(buf.as_mut_ptr(), buf.len()) }
     }
 
@@ -144,11 +196,15 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     /// (e.g. is_large(), get_level(), get_nchild(), get_val()).
     /// Calling any setter method on it is undefined behavior.
     pub fn from_slice_ref(buf: &[u8]) -> Result<Self> {
+        // SAFETY: `buf` is a valid slice. The caller promises to use the
+        // returned node only for reads, so casting to *mut u8 never produces
+        // a write through this pointer.
         unsafe { Self::from_raw_ptr(buf.as_ptr() as *mut u8, buf.len()) }
     }
 
     pub fn new(size: usize) -> Option<Self> {
         let ab = AlignedBuffer::new(size)?;
+        // SAFETY: ab just came from a successful allocation with `size` bytes.
         let data = unsafe { std::slice::from_raw_parts_mut(ab.ptr, ab.size) };
         let mut node = Self::from_slice(data).ok()?;
         node.buf = ab;
@@ -164,6 +220,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     pub fn copy_from_slice(id: P, buf: &[u8]) -> Option<Self> {
         let ab = AlignedBuffer::new(buf.len())?;
+        // SAFETY: ab just came from a successful allocation with `buf.len()` bytes.
         let data = unsafe { std::slice::from_raw_parts_mut(ab.ptr, ab.size) };
         data.copy_from_slice(buf);
         let mut node = Self::from_slice(data).ok()?;
@@ -191,6 +248,8 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     pub fn set_leaf(&self) {
         let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        // SAFETY: `ptr` points to an initialized `u8` field inside the header
+        // owned by this node; see the type-level "Safety invariants".
         unsafe {
             let mut flags = self.header.flags;
             flags |= BTREE_NODE_FLAG_LEAF;
@@ -201,6 +260,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     pub fn clear_leaf(&self) {
         let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        // SAFETY: header.flags is a valid, initialized u8 in this node's buffer.
         unsafe {
             let mut flags = self.header.flags;
             flags &= !BTREE_NODE_FLAG_LEAF;
@@ -219,6 +279,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     pub fn set_large(&self) {
         let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        // SAFETY: header.flags is a valid, initialized u8 in this node's buffer.
         unsafe {
             let mut flags = self.header.flags;
             flags |= BTREE_NODE_FLAG_LARGE;
@@ -229,6 +290,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     pub fn clear_large(&self) {
         let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        // SAFETY: header.flags is a valid, initialized u8 in this node's buffer.
         unsafe {
             let mut flags = self.header.flags;
             flags &= !BTREE_NODE_FLAG_LARGE;
@@ -244,6 +306,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     pub fn set_flags(&self, flags: u8) {
         let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        // SAFETY: header.flags is a valid, initialized u8 in this node's buffer.
         unsafe {
             ptr::write(ptr, flags);
         }
@@ -257,6 +320,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     pub fn set_level(&self, level: usize) {
         let ptr = ptr::addr_of!(self.header.level) as *mut u8;
+        // SAFETY: header.level is a valid, initialized u8 in this node's buffer.
         unsafe {
             ptr::write(ptr, level as u8);
         }
@@ -269,6 +333,9 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn set_key(&self, index: usize, key: &K) {
+         // SAFETY: `self.keymap[index]` is checked by indexing; the cast to
+         // *mut K is legal because the backing buffer is mutable (see type
+         // invariants) and K: Copy.
          unsafe {
             ptr::copy_nonoverlapping(
                 ptr::addr_of!(*key),
@@ -280,6 +347,11 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn get_val<X>(&self, index: usize) -> &X {
+        // SAFETY: `X` must match the node type: `X == V` for a leaf node,
+        // `X == P` for an internal node. Mismatched `X` is UB.
+        // `valptr` was computed in `from_raw_ptr` to point at the start of
+        // `capacity` values of the appropriate type; indexing is bounds-checked
+        // by the subsequent slice indexing.
         let slice = unsafe {
             std::slice::from_raw_parts(self.valptr as *const X, self.capacity)
         };
@@ -288,6 +360,9 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn set_val<X>(&self, index: usize, val: &X) {
+        // SAFETY: same `X` requirement as `get_val`. `index` must be < capacity;
+        // the library never calls this with an out-of-bounds index (enforced
+        // by the surrounding insert/split/merge logic).
         unsafe {
             let dst = (self.valptr as *mut X).add(index);
             ptr::copy_nonoverlapping(ptr::addr_of!(*val), dst, 1)
@@ -302,6 +377,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     pub fn set_nchild(&self, c: usize) {
         let ptr = ptr::addr_of!(self.header.nchildren) as *mut u16;
+        // SAFETY: header.nchildren is a valid, initialized u16 in this node's buffer.
         unsafe {
             ptr::write(ptr, c as u16);
         }
@@ -315,6 +391,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     pub fn set_userdata(&self, data: u32) {
         let ptr = ptr::addr_of!(self.header.userdata) as *mut u32;
+        // SAFETY: header.userdata is a valid, initialized u32 in this node's buffer.
         unsafe {
             ptr::write(ptr, data);
         }
@@ -362,6 +439,8 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     #[inline]
     pub fn set_id(&self, id: P) {
         let ptr = ptr::addr_of!(self.id) as *mut P;
+        // SAFETY: `self.id` is a P-typed field owned by this node; P: Copy
+        // (enforced by the impl bound), so ptr::write is legal.
         unsafe {
             ptr::write(ptr, id);
         }
@@ -388,9 +467,15 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         };
         let capacity = (len - hdr_size) / (key_size + val_size);
 
+        // SAFETY: `ptr` points at the start of the header, so
+        // `ptr.add(hdr_size)` lies at the start of the keymap region, which
+        // spans `capacity` elements of K, followed by `capacity` elements of
+        // V/P. All pointer arithmetic stays within the same allocation as
+        // `self.buf` (len is buf.size).
         self.keymap = unsafe {
             std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity)
         };
+        // SAFETY: see above; `hdr_size + capacity * key_size` <= buf.size.
         self.valptr = unsafe {
             ptr.add(hdr_size + capacity * key_size)
         };
@@ -412,9 +497,12 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         let val_size = std::mem::size_of::<X>();
         let capacity = (len - hdr_size) / (key_size + val_size);
 
+        // SAFETY: same reasoning as `do_update`; layout is computed to fit
+        // inside `self.buf`. Caller picks `X` matching the intended val type.
         self.keymap = unsafe {
             std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity)
         };
+        // SAFETY: see above.
         self.valptr = unsafe {
             ptr.add(hdr_size + capacity * key_size)
         };
@@ -469,6 +557,14 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         let mut lnchild = left.get_nchild();
         let mut rnchild = right.get_nchild();
 
+        // SAFETY: `left` and `right` are distinct sibling nodes (the caller
+        // passes two different BtreeNode references); their backing buffers
+        // do not alias. Pointer arithmetic stays within each node's keymap/
+        // valmap because the caller bounds n: `n <= rnchild` and
+        // `lnchild + n <= capacity`. ptr::copy handles potential overlap
+        // within a single node correctly. The X type must match the node
+        // layout (V for leaves, P for internals); `move_left` dispatches
+        // accordingly.
         unsafe {
 
         let lkeymap_tail_ptr = &left.keymap[lnchild] as *const K as *mut K;
@@ -519,6 +615,10 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         let mut lnchild = left.get_nchild();
         let mut rnchild = right.get_nchild();
 
+        // SAFETY: same reasoning as `do_move_left`. The caller ensures
+        // `n <= lnchild` and `rnchild + n <= capacity` so all offsets stay
+        // within each node's allocation. Left and right are distinct nodes,
+        // so their buffers never alias.
         unsafe {
 
         let lkeymap_tailn_ptr = &left.keymap[lnchild - n] as *const K as *mut K;
@@ -601,6 +701,12 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         let mut nchild = self.get_nchild();
 
         if index < nchild {
+            // SAFETY: shifting `nchild - index` elements from `index` to
+            // `index + 1` inside keymap and valmap. Requires nchild < capacity
+            // (the caller of insert must have ensured there is a free slot,
+            // which the btree layer enforces by splitting full nodes before
+            // insert). X must match the node layout (V for leaves, P for
+            // internals). ptr::copy handles the overlapping forward shift.
             unsafe {
                 let ksrc: *const K = &self.keymap[index] as *const K;
                 let vsrc: *const X = (self.valptr as *const X).add(index);
@@ -629,6 +735,10 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         *val = *self.get_val(index);
 
         if index < nchild - 1 {
+            // SAFETY: shifting `nchild - index - 1` elements from `index + 1`
+            // down to `index`, all within [0, nchild) <= [0, capacity). Same X
+            // requirement as `insert`. ptr::copy handles the overlapping
+            // backward shift.
             unsafe {
                 let ksrc: *const K = &self.keymap[index + 1] as *const K;
                 let vsrc: *const X = (self.valptr as *const X).add(index + 1);
@@ -682,10 +792,13 @@ impl<'a, K, V, P> fmt::Display for BtreeNode<'a, K, V, P>
 
 /// direct node descriptor for memory pointer, normally a tiny memory buffer
 ///
-/// SAFETY:
-///   node operations in immutable by unsafe code,
-///   this works because all ops for same node are expected to be ran in a single thread
+/// # Safety invariants
 ///
+/// Same model as [`BtreeNode`]: a flat buffer reinterpreted as
+/// `[NodeHeader][valmap: [V; capacity]]`. All `set_*` methods use interior
+/// mutability through raw pointers; concurrent writes to the same node are
+/// forbidden and the header fields are primitive `Copy` types whose word-sized
+/// writes are atomic with respect to the Rust abstract machine for our uses.
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub struct DirectNode<'a, V> {
@@ -697,15 +810,26 @@ pub struct DirectNode<'a, V> {
     _pin: PhantomPinned,
 }
 
+// SAFETY: see BtreeNode Send/Sync impls above. DirectNode carries similar raw
+// pointers; sharing across threads requires V: Send/Sync.
 #[cfg(feature = "arc")]
-unsafe impl<'a, V> Send for DirectNode<'a, V> {}
+unsafe impl<'a, V: Send> Send for DirectNode<'a, V> {}
 #[cfg(feature = "arc")]
-unsafe impl<'a, V> Sync for DirectNode<'a, V> {}
+unsafe impl<'a, V: Sync> Sync for DirectNode<'a, V> {}
 
 impl<'a, V> DirectNode<'a, V>
     where
         V: Copy + fmt::Display
 {
+    /// Reinterpret `ptr[..len]` as a BtreeNode.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must be non-null and valid for reads and writes of `len` bytes.
+    /// - The memory region must remain valid and exclusively owned by the
+    ///   returned node for its lifetime.
+    /// - Alignment and minimum length are checked at runtime; callers don't
+    ///   have to pre-check, but if these checks fail an `Err` is returned.
     unsafe fn from_raw_ptr(ptr: *mut u8, len: usize) -> Result<Self> {
         let hdr_size = std::mem::size_of::<NodeHeader>();
         if len < hdr_size {
@@ -717,7 +841,8 @@ impl<'a, V> DirectNode<'a, V>
                 format!("buffer pointer {:p} is not aligned to {}", ptr, std::mem::align_of::<NodeHeader>())));
         }
 
-        let header = ptr.cast::<NodeHeader>().as_mut().unwrap();
+        // SAFETY: ptr is non-null, len >= hdr_size, alignment verified above.
+        let header = &mut *ptr.cast::<NodeHeader>();
 
         let val_size = std::mem::size_of::<V>();
         let capacity = (len - hdr_size) / val_size;
@@ -726,6 +851,9 @@ impl<'a, V> DirectNode<'a, V>
                 format!("nchildren in header is larger than its capacity {} > {}", header.nchildren, capacity)));
         }
 
+        // SAFETY: `ptr` points at the start of the header (offset 0), so
+        // `ptr.add(hdr_size)` lies at the start of the valmap, which spans
+        // `capacity` elements of V within `self.buf`.
         let valmap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut V, capacity);
 
         Ok(Self {
@@ -739,6 +867,8 @@ impl<'a, V> DirectNode<'a, V>
     }
 
     pub fn from_slice(buf: &mut [u8]) -> Result<Self> {
+        // SAFETY: `buf` is a valid mutable slice; from_raw_ptr performs
+        // alignment and length checks before reinterpreting.
         unsafe { Self::from_raw_ptr(buf.as_mut_ptr(), buf.len()) }
     }
 
@@ -747,11 +877,13 @@ impl<'a, V> DirectNode<'a, V>
     /// SAFETY: The returned node must only be used for read operations.
     /// Calling any setter method on it is undefined behavior.
     pub fn from_slice_ref(buf: &[u8]) -> Result<Self> {
+        // SAFETY: caller promises read-only usage; see above doc.
         unsafe { Self::from_raw_ptr(buf.as_ptr() as *mut u8, buf.len()) }
     }
 
     pub fn new(size: usize) -> Option<Self> {
         let ab = AlignedBuffer::new(size)?;
+        // SAFETY: ab came from a successful allocation of `size` bytes.
         let data = unsafe { std::slice::from_raw_parts_mut(ab.ptr, ab.size) };
         let mut node = Self::from_slice(data).ok()?;
         node.buf = ab;
@@ -771,6 +903,8 @@ impl<'a, V> DirectNode<'a, V>
 
     #[inline]
     pub fn init(&self, flags: usize, level: usize, nchild: usize) {
+        // SAFETY: `flags`, `level`, `nchildren` are primitive fields inside
+        // the header owned by this node; see the type-level "Safety invariants".
         unsafe {
             let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
             ptr::write(ptr, flags as u8);
@@ -788,6 +922,9 @@ impl<'a, V> DirectNode<'a, V>
 
     #[inline]
     pub fn set_val(&self, index: usize, val: &V) {
+        // SAFETY: `self.valmap[index]` is bounds-checked by the indexing;
+        // V: Copy (enforced by impl bound). Writing through &self is part of
+        // the type's interior-mutability contract.
         unsafe {
             ptr::copy_nonoverlapping(
                 ptr::addr_of!(*val),
@@ -805,6 +942,7 @@ impl<'a, V> DirectNode<'a, V>
     #[inline]
     pub fn set_userdata(&self, data: u32) {
         let ptr = ptr::addr_of!(self.header.userdata) as *mut u32;
+        // SAFETY: header.userdata is a valid, initialized u32 in this node's buffer.
         unsafe {
             ptr::write(ptr, data);
         }
