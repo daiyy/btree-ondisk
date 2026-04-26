@@ -15,15 +15,6 @@ use std::io::Result;
 pub mod ondisk;
 pub mod node;
 pub mod btree;
-#[allow(dead_code)]
-#[cfg(not(feature = "sync-api"))]
-pub mod node_v1;
-#[allow(dead_code)]
-#[cfg(not(feature = "sync-api"))]
-pub mod btree_v1;
-#[allow(dead_code)]
-#[cfg(not(feature = "sync-api"))]
-pub mod direct_v1;
 mod direct;
 pub mod bmap;
 mod utils;
