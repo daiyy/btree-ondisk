@@ -42,20 +42,29 @@ impl AlignedBuffer {
         Some(Self { ptr, size })
     }
 
-    /// Create a non-owning empty buffer (will not be deallocated on drop).
-    fn non_owning() -> Self {
-        Self { ptr: std::ptr::null_mut(), size: 0 }
+    /// Create a non-owning view that records the size of an externally-owned
+    /// buffer. `ptr` stays null so `Drop` is a no-op; `size` simply carries the
+    /// length of the data region the enclosing node (`BtreeNode`/`DirectNode`)
+    /// was constructed from via `from_slice` / `from_slice_ref`, so callers
+    /// such as `do_update` / `do_reinit` can recover the original length.
+    fn non_owning(size: usize) -> Self {
+        Self { ptr: std::ptr::null_mut(), size }
     }
 
     fn as_ref(&self) -> &[u8] {
-        // SAFETY: `ptr` and `size` came from a successful allocation in `new`
-        // (or ptr is null and size is 0 for a non-owning placeholder).
-        // `from_raw_parts` tolerates a non-null dangling ptr for size 0,
-        // but we only call as_ref on owning buffers.
+        // Non-owning view: no owned storage to expose, even though `size`
+        // records the external buffer's length for other bookkeeping.
+        if self.ptr.is_null() {
+            return &[];
+        }
+        // SAFETY: `ptr` and `size` came from a successful allocation in `new`.
         unsafe { std::slice::from_raw_parts(self.ptr, self.size) }
     }
 
     fn as_mut(&mut self) -> &mut [u8] {
+        if self.ptr.is_null() {
+            return &mut [];
+        }
         // SAFETY: same as as_ref. Unique access is guaranteed by &mut self.
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.size) }
     }
@@ -175,7 +184,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             keymap,
             valptr,
             capacity,
-            buf: AlignedBuffer::non_owning(),
+            buf: AlignedBuffer::non_owning(len),
             id: P::invalid_value(),
             dirty: Cell::new(false),
             _pin: PhantomPinned,
@@ -860,7 +869,7 @@ impl<'a, V> DirectNode<'a, V>
             header,
             valmap,
             capacity,
-            buf: AlignedBuffer::non_owning(),
+            buf: AlignedBuffer::non_owning(len),
             dirty: Cell::new(false),
             _pin: PhantomPinned,
         })
