@@ -988,8 +988,6 @@ impl<'a, V> fmt::Display for DirectNode<'a, V>
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn node() {
     }
