@@ -229,9 +229,17 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     pub fn copy_from_slice(id: P, buf: &[u8]) -> Option<Self> {
         let ab = AlignedBuffer::new(buf.len())?;
-        // SAFETY: ab just came from a successful allocation with `buf.len()` bytes.
+        // Copy via raw pointers, then build the node. This avoids
+        // constructing an intermediate `&mut [u8]` that would alias the
+        // internal `header`/`keymap` borrows the node is about to hold.
+        // SAFETY: `ab` is a fresh exclusive allocation of `buf.len()` bytes;
+        // `buf` is a disjoint read-only slice.
+        unsafe {
+            std::ptr::copy_nonoverlapping(buf.as_ptr(), ab.ptr, buf.len());
+        }
+        // SAFETY: ab came from a successful allocation of `buf.len()` bytes;
+        // no other references into it exist at this point.
         let data = unsafe { std::slice::from_raw_parts_mut(ab.ptr, ab.size) };
-        data.copy_from_slice(buf);
         let mut node = Self::from_slice(data).ok()?;
         node.buf = ab;
         node.id = id;
@@ -900,14 +908,19 @@ impl<'a, V> DirectNode<'a, V>
     }
 
     pub fn copy_from_slice(buf: &[u8]) -> Option<Self> {
-        let size = buf.len();
-        if let Some(mut n) = Self::new(size) {
-            // copy data from buf to inner data
-            let data = n.as_u8_mut();
-            data.copy_from_slice(buf);
-            return Some(n);
+        let ab = AlignedBuffer::new(buf.len())?;
+        // Copy via raw pointer, then build the node — don't create a
+        // `&mut [u8]` view that would alias the node's internal borrows.
+        // SAFETY: `ab` is a fresh exclusive allocation; `buf` is disjoint.
+        unsafe {
+            std::ptr::copy_nonoverlapping(buf.as_ptr(), ab.ptr, buf.len());
         }
-        None
+        // SAFETY: ab came from a successful allocation of `buf.len()` bytes;
+        // no other references into it exist at this point.
+        let data = unsafe { std::slice::from_raw_parts_mut(ab.ptr, ab.size) };
+        let mut node = Self::from_slice(data).ok()?;
+        node.buf = ab;
+        Some(node)
     }
 
     #[inline]
