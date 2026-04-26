@@ -12,17 +12,19 @@ Run with `./run_audit.sh miri` and `./run_audit.sh fuzz [secs]`.
 
 ## Current status
 
-Running Miri on the full test suite now passes:
+Running Miri on the full test suite now passes under both feature
+configurations:
 
-- `cargo +nightly miri test --lib` — 1/1
-- `cargo +nightly miri test --test coverage_boost` — 18 passed, 2 ignored
-  (the ignored ones intentionally depend on `Vec<u8>` alignment to
-  exercise the alignment error path of `from_raw_ptr`; Miri models
-  allocator alignment differently).
-- `cargo +nightly miri test --test bmap_tests` — 11/11
+- **Default (`rc` + tokio-runtime)** via `./run_audit.sh miri`
+  - `cargo +nightly miri test --lib` — 1/1
+  - `cargo +nightly miri test --test coverage_boost` — 22/22
+  - `cargo +nightly miri test --test bmap_tests` — 11/11
+- **`arc` + tokio-runtime** via `./run_audit.sh miri-arc`
+  - same three targets, same counts, no UB reported
 
 cargo-fuzz `btree_node_from_slice` / `direct_node_from_slice` survive
-multi-million inputs; `bmap_read` reports a DoS panic (see below).
+multi-million inputs; `bmap_read` no longer crashes on malformed input
+after its signature was changed to return `Result` (see finding 6).
 
 ## Resolved findings
 
