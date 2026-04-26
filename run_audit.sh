@@ -11,6 +11,8 @@
 #   ./run_audit.sh miri-arc      # run Miri on arc+tokio-runtime
 #   ./run_audit.sh miri-all      # run both
 #   ./run_audit.sh fuzz [secs]   # run each fuzz target for N seconds (default 60)
+#   ./run_audit.sh fuzz-quick    # CI-friendly: seed from fuzz/seeds/* + 30s each
+#   ./run_audit.sh seed          # just (re)seed corpus from fuzz/seeds/*
 
 set -euo pipefail
 
@@ -31,19 +33,36 @@ miri_arc() {
     cargo +nightly miri test --no-default-features --features "$feats" --test bmap_tests
 }
 
-case "$cmd" in
-    miri)     miri_rc ;;
-    miri-arc) miri_arc ;;
-    miri-all) miri_rc; miri_arc ;;
-    fuzz)
-        secs="${2:-60}"
-        for t in btree_node_from_slice direct_node_from_slice bmap_read; do
-            echo "=== fuzz $t (${secs}s) ==="
-            cargo +nightly fuzz run "$t" -- -max_total_time="$secs" || true
+seed_corpus() {
+    # Copy any tracked regression seeds into the live corpus so libFuzzer
+    # picks them up at startup. fuzz/corpus/ is gitignored.
+    if [[ -d fuzz/seeds ]]; then
+        for dir in fuzz/seeds/*/; do
+            local target="$(basename "$dir")"
+            mkdir -p "fuzz/corpus/$target"
+            cp -n "$dir"* "fuzz/corpus/$target/" 2>/dev/null || true
         done
-        ;;
+    fi
+}
+
+fuzz_run() {
+    local secs="$1"
+    seed_corpus
+    for t in btree_node_from_slice direct_node_from_slice bmap_read; do
+        echo "=== fuzz $t (${secs}s) ==="
+        cargo +nightly fuzz run "$t" -- -max_total_time="$secs" || return 1
+    done
+}
+
+case "$cmd" in
+    miri)       miri_rc ;;
+    miri-arc)   miri_arc ;;
+    miri-all)   miri_rc; miri_arc ;;
+    fuzz)       fuzz_run "${2:-60}" ;;
+    fuzz-quick) fuzz_run 30 ;;
+    seed)       seed_corpus ;;
     *)
-        echo "usage: $0 {miri|miri-arc|miri-all|fuzz [secs]}" >&2
+        echo "usage: $0 {miri|miri-arc|miri-all|fuzz [secs]|fuzz-quick|seed}" >&2
         exit 2
         ;;
 esac
