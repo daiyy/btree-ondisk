@@ -220,7 +220,6 @@ fn btree_node_from_slice_errors_with_vec() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore)] // PartialEq impl aliases through `as_u8_mut`; see docs/audit.md
 fn btree_node_as_u8_mut_and_eq() {
     let mut n = BtreeNode::<u64, u64, u64>::new(256).unwrap();
     let _ = n.as_u8_mut().len();
@@ -236,7 +235,6 @@ fn btree_node_as_u8_mut_and_eq() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore)] // copy_from_slice aliasing UB; see docs/audit.md
 fn btree_node_new_copy_from_slice() {
     // new() succeeds for a valid size
     let node = BtreeNode::<u64, u64, u64>::new(256).unwrap();

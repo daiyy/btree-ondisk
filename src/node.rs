@@ -107,11 +107,14 @@ impl Drop for AlignedBuffer {
 ///    `Arc<Box<...>>` and external containers wrap it in `AtomicRefCell`).
 /// 4. `get_val<X>` / `set_val<X>` require the caller to pick `X == V` for
 ///    leaf nodes and `X == P` for internal nodes. Mismatched `X` yields UB.
+/// 5. `header`/`keymap` are stored as raw pointers (not `&mut` references) so
+///    that short-lived `&mut [u8]` views obtained via `as_u8_mut` do not
+///    conflict with long-lived aliasing borrows under Stacked/Tree Borrows.
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub struct BtreeNode<'a, K, V, P> {
-    header: &'a mut NodeHeader,
-    keymap: &'a mut [K],
+    header: *mut NodeHeader,
+    keymap: *mut K,
     valptr: *mut u8,
     capacity: usize,    // kv capacity of this btree node
     buf: AlignedBuffer,
@@ -119,6 +122,7 @@ pub struct BtreeNode<'a, K, V, P> {
     dirty: Cell<bool>,
     _pin: PhantomPinned,
     phantom: PhantomData<V>,
+    _lifetime: PhantomData<&'a mut u8>,
 }
 
 // SAFETY:
@@ -159,24 +163,22 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
                 format!("buffer pointer {:p} is not aligned to {}", ptr, std::mem::align_of::<NodeHeader>())));
         }
 
-        // SAFETY: ptr is non-null (checked via slice source), len >= hdr_size,
-        // and alignment is verified above. The reborrow lifetime is tied to `'a`
-        // by the returned struct's type parameter.
-        let header = &mut *ptr.cast::<NodeHeader>();
+        // SAFETY: ptr is non-null, len >= hdr_size, alignment verified above.
+        let header = ptr.cast::<NodeHeader>();
 
         let key_size = std::mem::size_of::<K>();
-        let val_size = if header.flags & BTREE_NODE_FLAG_LEAF > 0 {
+        let val_size = if (*header).flags & BTREE_NODE_FLAG_LEAF > 0 {
             std::mem::size_of::<V>()
         } else {
             std::mem::size_of::<P>()
         };
         let capacity = (len - hdr_size) / (key_size + val_size);
-        if capacity < header.nchildren as usize {
+        if capacity < (*header).nchildren as usize {
             return Err(Error::new(ErrorKind::InvalidData,
-                format!("nchildren in header is larger than its capacity {} > {}", header.nchildren, capacity)));
+                format!("nchildren in header is larger than its capacity {} > {}", (*header).nchildren, capacity)));
         }
 
-        let keymap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity);
+        let keymap = ptr.add(hdr_size) as *mut K;
         let valptr = ptr.add(hdr_size + capacity * key_size);
 
         Ok(Self {
@@ -189,6 +191,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             dirty: Cell::new(false),
             _pin: PhantomPinned,
             phantom: PhantomData,
+            _lifetime: PhantomData,
         })
     }
 
@@ -247,16 +250,33 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     }
 
     pub fn as_u8_ref(&self) -> &[u8] {
-        self.buf.as_ref()
+        // Share provenance with header/keymap by rooting at `self.header`.
+        // SAFETY: `self.header` is the start of `self.buf`.
+        unsafe { std::slice::from_raw_parts(self.header as *const u8, self.buf.size) }
     }
 
     pub fn as_u8_mut(&mut self) -> &mut [u8] {
-        self.buf.as_mut()
+        // Reborrow from the same raw base that `header`/`keymap` are
+        // derived from, so the resulting slice does not invalidate them
+        // under Tree/Stacked Borrows.
+        // SAFETY: `self.header` points at the start of `self.buf`, which
+        // spans `self.buf.size` initialized bytes owned exclusively by
+        // this node.
+        unsafe { std::slice::from_raw_parts_mut(self.header as *mut u8, self.buf.size) }
+    }
+
+    /// Short-lived reborrow of the header. The reference is only valid for
+    /// the duration of the caller's expression and must not coexist with any
+    /// other borrow of the same bytes.
+    #[inline]
+    fn header(&self) -> &NodeHeader {
+        // SAFETY: `self.header` points into `self.buf`; see type invariants.
+        unsafe { &*self.header }
     }
 
     #[inline]
     pub fn is_leaf(&self) -> bool {
-        if (self.header.flags & BTREE_NODE_FLAG_LEAF) == BTREE_NODE_FLAG_LEAF {
+        if (self.header().flags & BTREE_NODE_FLAG_LEAF) == BTREE_NODE_FLAG_LEAF {
             return true;
         }
         false
@@ -264,11 +284,11 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn set_leaf(&self) {
-        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        let ptr = unsafe { &raw mut (*self.header).flags };
         // SAFETY: `ptr` points to an initialized `u8` field inside the header
         // owned by this node; see the type-level "Safety invariants".
         unsafe {
-            let mut flags = self.header.flags;
+            let mut flags = self.header().flags;
             flags |= BTREE_NODE_FLAG_LEAF;
             ptr::write(ptr, flags);
         }
@@ -276,10 +296,10 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn clear_leaf(&self) {
-        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        let ptr = unsafe { &raw mut (*self.header).flags };
         // SAFETY: header.flags is a valid, initialized u8 in this node's buffer.
         unsafe {
-            let mut flags = self.header.flags;
+            let mut flags = self.header().flags;
             flags &= !BTREE_NODE_FLAG_LEAF;
             ptr::write(ptr, flags);
         }
@@ -287,7 +307,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn is_large(&self) -> bool {
-        if (self.header.flags & BTREE_NODE_FLAG_LARGE) == BTREE_NODE_FLAG_LARGE {
+        if (self.header().flags & BTREE_NODE_FLAG_LARGE) == BTREE_NODE_FLAG_LARGE {
             return true;
         }
         false
@@ -295,10 +315,10 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn set_large(&self) {
-        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        let ptr = unsafe { &raw mut (*self.header).flags };
         // SAFETY: header.flags is a valid, initialized u8 in this node's buffer.
         unsafe {
-            let mut flags = self.header.flags;
+            let mut flags = self.header().flags;
             flags |= BTREE_NODE_FLAG_LARGE;
             ptr::write(ptr, flags);
         }
@@ -306,10 +326,10 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn clear_large(&self) {
-        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        let ptr = unsafe { &raw mut (*self.header).flags };
         // SAFETY: header.flags is a valid, initialized u8 in this node's buffer.
         unsafe {
-            let mut flags = self.header.flags;
+            let mut flags = self.header().flags;
             flags &= !BTREE_NODE_FLAG_LARGE;
             ptr::write(ptr, flags);
         }
@@ -317,12 +337,12 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn get_flags(&self) -> u8 {
-        self.header.flags
+        self.header().flags
     }
 
     #[inline]
     pub fn set_flags(&self, flags: u8) {
-        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        let ptr = unsafe { &raw mut (*self.header).flags };
         // SAFETY: header.flags is a valid, initialized u8 in this node's buffer.
         unsafe {
             ptr::write(ptr, flags);
@@ -331,12 +351,12 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn get_level(&self) -> usize {
-        self.header.level as usize
+        self.header().level as usize
     }
 
     #[inline]
     pub fn set_level(&self, level: usize) {
-        let ptr = ptr::addr_of!(self.header.level) as *mut u8;
+        let ptr = unsafe { &raw mut (*self.header).level };
         // SAFETY: header.level is a valid, initialized u8 in this node's buffer.
         unsafe {
             ptr::write(ptr, level as u8);
@@ -345,7 +365,9 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn get_key(&self, index: usize) -> &K {
-        &self.keymap[index]
+        // SAFETY: `self.keymap` spans `self.capacity` K values; indexing is
+        // the caller's responsibility (library always passes index < capacity).
+        unsafe { &*self.keymap.add(index) }
     }
 
     #[inline]
@@ -356,7 +378,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
          unsafe {
             ptr::copy_nonoverlapping(
                 ptr::addr_of!(*key),
-                ptr::addr_of!(self.keymap[index]) as *mut K,
+                self.keymap.add(index),
                 1
             )
         }
@@ -388,12 +410,12 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn get_nchild(&self) -> usize {
-        self.header.nchildren as usize
+        self.header().nchildren as usize
     }
 
     #[inline]
     pub fn set_nchild(&self, c: usize) {
-        let ptr = ptr::addr_of!(self.header.nchildren) as *mut u16;
+        let ptr = unsafe { &raw mut (*self.header).nchildren };
         // SAFETY: header.nchildren is a valid, initialized u16 in this node's buffer.
         unsafe {
             ptr::write(ptr, c as u16);
@@ -402,12 +424,12 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn get_userdata(&self) -> u32 {
-        self.header.userdata
+        self.header().userdata
     }
 
     #[inline]
     pub fn set_userdata(&self, data: u32) {
-        let ptr = ptr::addr_of!(self.header.userdata) as *mut u32;
+        let ptr = unsafe { &raw mut (*self.header).userdata };
         // SAFETY: header.userdata is a valid, initialized u32 in this node's buffer.
         unsafe {
             ptr::write(ptr, data);
@@ -445,7 +467,8 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn node_key(&self) -> &K {
-        &self.keymap[0]
+        // SAFETY: capacity >= 1 for all valid nodes (enforced by from_raw_ptr).
+        unsafe { &*self.keymap }
     }
 
     #[inline]
@@ -472,7 +495,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
-        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        let base = self.header as *mut u8;
 
         let key_size = std::mem::size_of::<K>();
         let val_size = if self.get_level() == BTREE_NODE_LEVEL_LEAF {
@@ -484,18 +507,11 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         };
         let capacity = (len - hdr_size) / (key_size + val_size);
 
-        // SAFETY: `ptr` points at the start of the header, so
-        // `ptr.add(hdr_size)` lies at the start of the keymap region, which
-        // spans `capacity` elements of K, followed by `capacity` elements of
-        // V/P. All pointer arithmetic stays within the same allocation as
-        // `self.buf` (len is buf.size).
-        self.keymap = unsafe {
-            std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity)
-        };
-        // SAFETY: see above; `hdr_size + capacity * key_size` <= buf.size.
-        self.valptr = unsafe {
-            ptr.add(hdr_size + capacity * key_size)
-        };
+        // SAFETY: `base` points at the start of the header; offsetting by
+        // `hdr_size` reaches the keymap region, followed by the valmap. All
+        // arithmetic stays within `self.buf` (len == buf.size).
+        self.keymap = unsafe { base.add(hdr_size) } as *mut K;
+        self.valptr = unsafe { base.add(hdr_size + capacity * key_size) };
         self.capacity = capacity;
     }
 
@@ -508,21 +524,15 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             panic!("input buf size {} smaller than a valid btree node header size {}", len, hdr_size);
         }
 
-        let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
+        let base = self.header as *mut u8;
 
         let key_size = std::mem::size_of::<K>();
         let val_size = std::mem::size_of::<X>();
         let capacity = (len - hdr_size) / (key_size + val_size);
 
-        // SAFETY: same reasoning as `do_update`; layout is computed to fit
-        // inside `self.buf`. Caller picks `X` matching the intended val type.
-        self.keymap = unsafe {
-            std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut K, capacity)
-        };
-        // SAFETY: see above.
-        self.valptr = unsafe {
-            ptr.add(hdr_size + capacity * key_size)
-        };
+        // SAFETY: same reasoning as `do_update`.
+        self.keymap = unsafe { base.add(hdr_size) } as *mut K;
+        self.valptr = unsafe { base.add(hdr_size + capacity * key_size) };
         self.capacity = capacity;
     }
 
@@ -584,13 +594,13 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         // accordingly.
         unsafe {
 
-        let lkeymap_tail_ptr = &left.keymap[lnchild] as *const K as *mut K;
+        let lkeymap_tail_ptr = left.keymap.add(lnchild) as *const K as *mut K;
         let lvalmap_tail_ptr = (left.valptr as *mut X).add(lnchild);
 
-        let rkeymap_head_ptr = &right.keymap[0] as *const K as *mut K;
+        let rkeymap_head_ptr = right.keymap.add(0) as *const K as *mut K;
         let rvalmap_head_ptr = right.valptr as *mut X;
 
-        let rkeymap_n_ptr = &right.keymap[n] as *const K as *mut K;
+        let rkeymap_n_ptr = right.keymap.add(n) as *const K as *mut K;
         let rvalmap_n_ptr = (right.valptr as *mut X).add(n);
 
 
@@ -638,13 +648,13 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         // so their buffers never alias.
         unsafe {
 
-        let lkeymap_tailn_ptr = &left.keymap[lnchild - n] as *const K as *mut K;
+        let lkeymap_tailn_ptr = left.keymap.add(lnchild - n) as *const K as *mut K;
         let lvalmap_tailn_ptr = (left.valptr as *mut X).add(lnchild - n);
 
-        let rkeymap_head_ptr = &right.keymap[0] as *const K as *mut K;
+        let rkeymap_head_ptr = right.keymap.add(0) as *const K as *mut K;
         let rvalmap_head_ptr = right.valptr as *mut X;
 
-        let rkeymap_n_ptr = &right.keymap[n] as *const K as *mut K;
+        let rkeymap_n_ptr = right.keymap.add(n) as *const K as *mut K;
         let rvalmap_n_ptr = (right.valptr as *mut X).add(n);
 
 
@@ -680,11 +690,11 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     //   - (found, index)
     //   - (notfound, index)
     pub fn lookup(&self, key: &K) -> (bool, usize) {
-        if self.header.nchildren == 0 {
+        if self.header().nchildren == 0 {
             return (false, 0);
         }
         let mut low: isize = 0;
-        let mut high: isize = (self.header.nchildren - 1) as isize;
+        let mut high: isize = (self.header().nchildren - 1) as isize;
         let mut s = false;
         let mut index = 0;
 
@@ -725,10 +735,10 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             // insert). X must match the node layout (V for leaves, P for
             // internals). ptr::copy handles the overlapping forward shift.
             unsafe {
-                let ksrc: *const K = &self.keymap[index] as *const K;
+                let ksrc: *const K = &*self.keymap.add(index) as *const K;
                 let vsrc: *const X = (self.valptr as *const X).add(index);
 
-                let kdst: *mut K = ptr::addr_of!(self.keymap[index + 1]) as *mut K;
+                let kdst: *mut K = self.keymap.add(index + 1);
                 let vdst: *mut X = (self.valptr as *mut X).add(index + 1);
 
                 let count = nchild - index;
@@ -757,10 +767,10 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             // requirement as `insert`. ptr::copy handles the overlapping
             // backward shift.
             unsafe {
-                let ksrc: *const K = &self.keymap[index + 1] as *const K;
+                let ksrc: *const K = self.keymap.add(index + 1) as *const K;
                 let vsrc: *const X = (self.valptr as *const X).add(index + 1);
 
-                let kdst: *mut K = ptr::addr_of!(self.keymap[index]) as *mut K;
+                let kdst: *mut K = self.keymap.add(index);
                 let vdst: *mut X = (self.valptr as *mut X).add(index);
 
                 let count = nchild - index - 1;
@@ -795,8 +805,8 @@ impl<'a, K, V, P> fmt::Display for BtreeNode<'a, K, V, P>
             writeln!(f, "===== dump btree node @{:?} id {} ====", self.header as *const NodeHeader, self.id())?;
         }
         writeln!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}, is leaf: {}",
-            self.header.flags, self.header.level, self.header.nchildren, self.capacity, self.is_leaf())?;
-        for idx in 0..self.header.nchildren.into() {
+            self.header().flags, self.header().level, self.header().nchildren, self.capacity, self.is_leaf())?;
+        for idx in 0..self.header().nchildren.into() {
             if self.is_leaf() {
                 writeln!(f, "{:3}   {:20}   {:20}", idx, self.get_key(idx), self.get_val::<K>(idx))?;
             } else {
@@ -819,12 +829,13 @@ impl<'a, K, V, P> fmt::Display for BtreeNode<'a, K, V, P>
 #[derive(Debug)]
 #[repr(C, align(8))]
 pub struct DirectNode<'a, V> {
-    header: &'a mut NodeHeader,
-    valmap: &'a mut [V],
+    header: *mut NodeHeader,
+    valmap: *mut V,
     capacity: usize,
     buf: AlignedBuffer,
     dirty: Cell<bool>,
     _pin: PhantomPinned,
+    _lifetime: PhantomData<&'a mut V>,
 }
 
 // SAFETY: see BtreeNode Send/Sync impls above. DirectNode carries similar raw
@@ -838,6 +849,13 @@ impl<'a, V> DirectNode<'a, V>
     where
         V: Copy + fmt::Display
 {
+    /// Short-lived reborrow of the header.
+    #[inline]
+    fn header(&self) -> &NodeHeader {
+        // SAFETY: `self.header` points into `self.buf`; see type invariants.
+        unsafe { &*self.header }
+    }
+
     /// Reinterpret `ptr[..len]` as a BtreeNode.
     ///
     /// # Safety
@@ -859,19 +877,19 @@ impl<'a, V> DirectNode<'a, V>
         }
 
         // SAFETY: ptr is non-null, len >= hdr_size, alignment verified above.
-        let header = &mut *ptr.cast::<NodeHeader>();
+        let header = ptr.cast::<NodeHeader>();
 
         let val_size = std::mem::size_of::<V>();
         let capacity = (len - hdr_size) / val_size;
-        if capacity < header.nchildren as usize {
+        if capacity < (*header).nchildren as usize {
             return Err(Error::new(ErrorKind::InvalidData,
-                format!("nchildren in header is larger than its capacity {} > {}", header.nchildren, capacity)));
+                format!("nchildren in header is larger than its capacity {} > {}", (*header).nchildren, capacity)));
         }
 
         // SAFETY: `ptr` points at the start of the header (offset 0), so
         // `ptr.add(hdr_size)` lies at the start of the valmap, which spans
         // `capacity` elements of V within `self.buf`.
-        let valmap = std::slice::from_raw_parts_mut(ptr.add(hdr_size) as *mut V, capacity);
+        let valmap = ptr.add(hdr_size) as *mut V;
 
         Ok(Self {
             header,
@@ -880,6 +898,7 @@ impl<'a, V> DirectNode<'a, V>
             buf: AlignedBuffer::non_owning(len),
             dirty: Cell::new(false),
             _pin: PhantomPinned,
+            _lifetime: PhantomData,
         })
     }
 
@@ -928,18 +947,17 @@ impl<'a, V> DirectNode<'a, V>
         // SAFETY: `flags`, `level`, `nchildren` are primitive fields inside
         // the header owned by this node; see the type-level "Safety invariants".
         unsafe {
-            let ptr = ptr::addr_of!(self.header.flags) as *mut u8;
-            ptr::write(ptr, flags as u8);
-            let ptr = ptr::addr_of!(self.header.level) as *mut u8;
-            ptr::write(ptr, level as u8);
-            let ptr = ptr::addr_of!(self.header.nchildren) as *mut u16;
-            ptr::write(ptr, nchild as u16);
+            let h = self.header;
+            ptr::write(&raw mut (*h).flags, flags as u8);
+            ptr::write(&raw mut (*h).level, level as u8);
+            ptr::write(&raw mut (*h).nchildren, nchild as u16);
         }
     }
 
     #[inline]
     pub fn get_val(&self, index: usize) -> &V {
-        &self.valmap[index]
+        // SAFETY: valmap spans `self.capacity` elements; caller ensures index bound.
+        unsafe { &*self.valmap.add(index) }
     }
 
     #[inline]
@@ -950,7 +968,7 @@ impl<'a, V> DirectNode<'a, V>
         unsafe {
             ptr::copy_nonoverlapping(
                 ptr::addr_of!(*val),
-                ptr::addr_of!(self.valmap[index]) as *mut V,
+                self.valmap.add(index),
                 1
             )
         }
@@ -958,12 +976,12 @@ impl<'a, V> DirectNode<'a, V>
 
     #[inline]
     pub fn get_userdata(&self) -> u32 {
-        self.header.userdata
+        self.header().userdata
     }
 
     #[inline]
     pub fn set_userdata(&self, data: u32) {
-        let ptr = ptr::addr_of!(self.header.userdata) as *mut u32;
+        let ptr = unsafe { &raw mut (*self.header).userdata };
         // SAFETY: header.userdata is a valid, initialized u32 in this node's buffer.
         unsafe {
             ptr::write(ptr, data);
@@ -976,11 +994,15 @@ impl<'a, V> DirectNode<'a, V>
     }
 
     pub fn as_u8_ref(&self) -> &[u8] {
-        self.buf.as_ref()
+        // Share provenance with header/keymap by rooting at `self.header`.
+        // SAFETY: `self.header` is the start of `self.buf`.
+        unsafe { std::slice::from_raw_parts(self.header as *const u8, self.buf.size) }
     }
 
     pub fn as_u8_mut(&mut self) -> &mut [u8] {
-        self.buf.as_mut()
+        // Same reasoning as BtreeNode::as_u8_mut.
+        // SAFETY: `self.header` is the start of the node's buffer.
+        unsafe { std::slice::from_raw_parts_mut(self.header as *mut u8, self.buf.size) }
     }
 }
 
@@ -991,7 +1013,7 @@ impl<'a, V> fmt::Display for DirectNode<'a, V>
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "===== dump direct node @{:?} ====", self.header as *const NodeHeader)?;
         writeln!(f, "  flags: {},  level: {}, nchildren: {}, capacity: {}",
-            self.header.flags, self.header.level, self.header.nchildren, self.capacity)?;
+            self.header().flags, self.header().level, self.header().nchildren, self.capacity)?;
         for idx in 0..self.capacity {
             writeln!(f, "{:3}   {:20}   {:20}", idx, idx, self.get_val(idx))?;
         }
