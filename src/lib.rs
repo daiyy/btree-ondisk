@@ -5,6 +5,24 @@
 //! Converted to btree based map when key exceed direct node's capacity.
 //!
 //! Individual btree node in the map can be load back from backend storage by [`BlockLoader`].
+//!
+//! # Contract for the pointer type `P`
+//!
+//! `BMap` is generic over the child-pointer type `P`. Because the internal
+//! sequence counter is stored as an `AtomicU64` under the `arc` feature,
+//! **the `From<u64>` and `Into<u64>` impls on `P` must be mutual inverses**:
+//! for every `x: u64`,
+//!
+//! ```text
+//! let p: P = x.into();
+//! let y: u64 = p.into();
+//! assert_eq!(x, y);
+//! ```
+//!
+//! In practice this means `P` should either be `u64` itself or a
+//! transparent wrapper that preserves all 64 bits of the input. Lossy
+//! conversions (e.g. truncating to `u32`) are not supported and will
+//! silently desynchronise the internal sequence under `arc`.
 
 #[cfg(all(feature = "rc", feature = "arc"))]
 compile_error!("features `rc` and `arc` are mutually exclusive");
