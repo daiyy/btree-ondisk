@@ -728,13 +728,18 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         self.do_truncate(key).await
     }
 
-    /// Read in root node from extenal buffer.
-    pub fn read(buf: &[u8], meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Self {
-        let root = BtreeNode::<K, V, P>::from_slice_ref(buf).expect("failed to parse root node");
+    /// Read in root node from external buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an `io::Error` if `buf` is too small, misaligned, or its
+    /// header is malformed (e.g. `nchildren > capacity`).
+    pub fn read(buf: &[u8], meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Result<Self> {
+        let root = BtreeNode::<K, V, P>::from_slice_ref(buf)?;
         if root.is_large() {
-            return Self::new_btree(buf, meta_block_size, block_loader, node_tiered_cache);
+            return Ok(Self::new_btree(buf, meta_block_size, block_loader, node_tiered_cache));
         }
-        Self::new_direct(buf, meta_block_size, block_loader, node_tiered_cache)
+        Ok(Self::new_direct(buf, meta_block_size, block_loader, node_tiered_cache))
     }
 
     /// Write out root node to external buffer.

@@ -48,13 +48,15 @@ multi-million inputs; `bmap_read` reports a DoS panic (see below).
    `convert_and_insert`, `convert_to_direct`) from `Vec<u8>` to a new
    `pub` `AlignedBuffer` type that allocates via `alloc::alloc_zeroed`
    with an 8-byte layout.
+6. **`BMap::read` DoS panic** — previously `.expect("failed to parse
+   root node")` on any malformed input. Signature is now
+   `pub fn read(...) -> Result<Self, io::Error>`; the parser's error
+   is propagated instead. Verified against the recorded fuzz artifacts
+   and a 14M-iteration fuzz run.
 
 ## Open findings
 
-- **`BMap::read` panics on malformed input** (bmap.rs:733). libFuzzer
-  reproduces in seconds. Propagating the parser's `Result` (changing
-  the signature to `Result<Self, io::Error>`) is the right fix; not
-  done in this audit round.
+_None tracked in this audit round._
 
 ## Clean fuzz runs
 

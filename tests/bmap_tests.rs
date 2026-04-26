@@ -218,7 +218,7 @@ async fn root_buffer_round_trip() {
     m.write(buf.as_mut_slice());
 
     // reconstruct; new_btree/new_direct chosen automatically
-    let m2 = TestBMap::read(buf.as_slice(), META, NullBlockLoader, NullNodeCache);
+    let m2 = TestBMap::read(buf.as_slice(), META, NullBlockLoader, NullNodeCache).unwrap();
     // root should be re-usable; we cannot verify lookups without loader data
     // but we can confirm the type matches and userdata is preserved.
     assert_eq!(m.get_userdata(), m2.get_userdata());
