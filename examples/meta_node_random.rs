@@ -23,7 +23,7 @@ struct MemoryFile<'a> {
 impl<'a> MemoryFile<'a> {
     fn new(root_node_size: usize, meta_node_size: usize, data_block_size: usize, max_file_blk_idx: u64) -> Self {
         let loader = MemoryBlockLoader::new(data_block_size);
-        let bmap = BMap::<u64, u64, u64, MemoryBlockLoader<u64>, NullNodeCache>::new(root_node_size, meta_node_size, loader.clone(), NullNodeCache);
+        let bmap = BMap::<u64, u64, u64, MemoryBlockLoader<u64>, NullNodeCache>::new(root_node_size, meta_node_size, loader.clone(), NullNodeCache).unwrap();
         // limit max cached meta data nodes
         bmap.set_cache_limit(CACHE_LIMIT);
         Self {

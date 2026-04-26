@@ -25,7 +25,7 @@ const ROOT: usize = 56;
 const META: usize = 256;
 
 fn null_bmap<'a>() -> NullBMap<'a> {
-    BMap::new(ROOT, META, NullBlockLoader, NullNodeCache)
+    BMap::new(ROOT, META, NullBlockLoader, NullNodeCache).unwrap()
 }
 
 // --- BMap direct-node arms ---
@@ -115,7 +115,7 @@ async fn direct_lookup_level_and_tiny_root() {
 
     // a root so small it has zero capacity for V=u64
     // header is 8 bytes so anything < 16 makes capacity = 0
-    let m2: NullBMap = BMap::new(8, META, NullBlockLoader, NullNodeCache);
+    let m2: NullBMap = BMap::new(8, META, NullBlockLoader, NullNodeCache).unwrap();
     let err = m2.lookup(&0).await.err().unwrap();
     assert_eq!(err.kind(), ErrorKind::NotFound);
 }
@@ -328,7 +328,7 @@ async fn memory_loader_read_write_dup() {
 #[tokio::test]
 async fn memory_loader_flush_and_evict() {
     let loader = MemoryBlockLoader::<u64>::new(META);
-    let mut m: MemBMap = BMap::new(ROOT, META, loader.clone(), NullNodeCache);
+    let mut m: MemBMap = BMap::new(ROOT, META, loader.clone(), NullNodeCache).unwrap();
 
     for k in 0..256u64 {
         let _ = m.insert(k, k + 1).await.unwrap();

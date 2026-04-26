@@ -11,7 +11,7 @@ use btree_ondisk::{NullBlockLoader, NullNodeCache};
 fn sync_api_insert_lookup_delete_truncate() {
     let mut m = BMap::<u64, u64, u64, NullBlockLoader, NullNodeCache>::new(
         56, 256, NullBlockLoader, NullNodeCache,
-    );
+    ).unwrap();
     for k in 0..64u64 {
         let _ = m.insert(k, k + 1).unwrap();
     }

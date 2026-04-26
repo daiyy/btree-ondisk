@@ -20,7 +20,7 @@ impl<'a> File<'a> {
 
         let loader = NullBlockLoader;
         let cache = NullNodeCache;
-        let bmap = BMap::<u64, u64, u64, NullBlockLoader, NullNodeCache>::new(root_size, meta_block_size, loader, cache);
+        let bmap = BMap::<u64, u64, u64, NullBlockLoader, NullNodeCache>::new(root_size, meta_block_size, loader, cache).unwrap();
         Self {
             bmap: bmap,
             root_node_size: root_size,

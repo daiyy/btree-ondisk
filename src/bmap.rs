@@ -259,25 +259,36 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         C: NodeCache<P> + Clone,
 {
     /// Constructs a map start from empty direct node.
+    ///
+    /// # Errors
+    ///
+    /// * `InvalidInput` — `root_node_size` exceeds half of `meta_block_size`,
+    ///   or allocating the root buffer failed.
     // start from a direct node at level 1 with no entries
-    pub fn new(root_node_size: usize, meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Self {
+    pub fn new(root_node_size: usize, meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Result<Self> {
         if root_node_size > (meta_block_size / 2) {
-            panic!("root node size {} is too large, reduce to {} at least, which is half of meta block size",
-                root_node_size, meta_block_size / 2);
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("root node size {} is too large, must be <= {} (half of meta block size)",
+                    root_node_size, meta_block_size / 2),
+            ));
         }
         // allocate temp space to init a root node as direct
-        let mut data = AlignedBuffer::new(root_node_size).expect("failed to allocate root");
+        let mut data = AlignedBuffer::new(root_node_size).ok_or_else(|| std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("failed to allocate aligned buffer of size {root_node_size}"),
+        ))?;
         // init direct root node at level 1
-        let root = DirectNode::<V>::from_slice(data.as_mut_slice()).expect("failed to init root node");
+        let root = DirectNode::<V>::from_slice(data.as_mut_slice())?;
         // flags = 0, level = 1, nchild = 0;
         root.init(0, 1, 0);
 
-        Self {
+        Ok(Self {
             inner: NodeType::Direct(DirectMap::<K, V, P>::new(data.as_slice())),
             meta_block_size,
             block_loader: Some(block_loader),
             node_tiered_cache: Some(node_tiered_cache),
-        }
+        })
     }
 
     /// Constructs a new direct map from data slice.

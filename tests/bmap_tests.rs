@@ -26,7 +26,7 @@ const META: usize = 256;
 fn make_bmap<'a>() -> TestBMap<'a> {
     BMap::<u64, u64, u64, NullBlockLoader, NullNodeCache>::new(
         ROOT, META, NullBlockLoader, NullNodeCache,
-    )
+    ).unwrap()
 }
 
 // --------- direct node paths ---------

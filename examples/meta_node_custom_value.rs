@@ -75,7 +75,7 @@ struct MemoryFile<'a, const N: usize> {
 impl<'a, const N: usize> MemoryFile<'a, N> {
     fn new(root_node_size: usize, meta_block_size: usize, data_block_size: usize) -> Self {
         let loader = MemoryBlockLoader::<u64>::new(data_block_size);
-        let bmap = BMap::<u64, CustomValue<N>, u64, MemoryBlockLoader<u64>, NullNodeCache>::new(root_node_size, meta_block_size, loader.clone(), NullNodeCache);
+        let bmap = BMap::<u64, CustomValue<N>, u64, MemoryBlockLoader<u64>, NullNodeCache>::new(root_node_size, meta_block_size, loader.clone(), NullNodeCache).unwrap();
         // limit max cached meta data nodes
         bmap.set_cache_limit(CACHE_LIMIT);
         let mut start_seq = VALID_EXTERNAL_ASSIGN_MASK;
