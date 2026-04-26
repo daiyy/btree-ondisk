@@ -1,79 +1,62 @@
 # Unsafe Audit Findings
 
-This document records results from two complementary tools run against
-the existing `unsafe` code in this crate:
+Run with `./run_audit.sh miri` and `./run_audit.sh fuzz [secs]`.
 
-- **Miri** (`cargo +nightly miri test --lib` and selected integration
-  tests). Miri detects Undefined Behaviour including Stacked/Tree Borrows
-  violations.
-- **cargo-fuzz** targets in `fuzz/fuzz_targets/` (coverage-guided
-  libFuzzer + AddressSanitizer). These stress the public entry points
-  that drive `unsafe fn from_raw_ptr`.
+## Tools
 
-Run everything with `./run_audit.sh miri` and `./run_audit.sh fuzz [secs]`.
+- **Miri** (`cargo +nightly miri test`) — detects UB including
+  Stacked / Tree Borrows violations.
+- **cargo-fuzz** targets in `fuzz/fuzz_targets/` (libFuzzer +
+  AddressSanitizer) — stress the public entry points that drive
+  `unsafe fn from_raw_ptr`.
 
-## Confirmed findings
+## Current status
 
-### 1. Aliasing UB in `copy_from_slice` (Miri, Tree Borrows)
+Running Miri on the full test suite now passes:
 
-`BtreeNode::copy_from_slice` and `DirectNode::copy_from_slice` first
-call `Self::new(size)`, which constructs a node whose internal
-`header`/`keymap`/`valptr` hold live borrows into the allocated buffer,
-then mutate the same buffer through `n.as_u8_mut().copy_from_slice(buf)`
-and return `n`.
+- `cargo +nightly miri test --lib` — 1/1
+- `cargo +nightly miri test --test coverage_boost` — 18 passed, 2 ignored
+  (the ignored ones intentionally depend on `Vec<u8>` alignment to
+  exercise the alignment error path of `from_raw_ptr`; Miri models
+  allocator alignment differently).
+- `cargo +nightly miri test --test bmap_tests` — 11/11
 
-Miri (Tree Borrows) reports:
+cargo-fuzz `btree_node_from_slice` / `direct_node_from_slice` survive
+multi-million inputs; `bmap_read` reports a DoS panic (see below).
 
-```
-error: Undefined Behavior: reborrow through <...> at alloc.../.. is forbidden
-   --> src/node.rs:908
-    |
-908 |             return Some(n);
-    |                         ^ Undefined Behavior occurred here
-```
+## Resolved findings
 
-Stacked Borrows also flags the reborrow performed inside
-`AlignedBuffer::as_mut` when another live borrow (e.g. `header`) still
-aliases the same allocation.
+1. **Aliasing UB in `Btree/DirectNode::copy_from_slice`** — fixed by
+   copying bytes via `ptr::copy_nonoverlapping` *before* the node view
+   is constructed, so no `&mut [u8]` aliases the internal borrows.
+2. **Aliasing UB in node field access** (`header`, `keymap`, `valmap`)
+   — fixed by storing them as raw pointers and reborrowing short-lived
+   references on demand. `as_u8_ref` / `as_u8_mut` now derive their
+   slice from `self.header as *mut u8` so the returned slice shares
+   provenance with the node's internal raw pointers.
+3. **Aliasing UB in `set_id`** — `ptr::addr_of!(self.id) as *mut P`
+   produced a SharedReadOnly tag that was then written through. Fixed
+   by storing `id` inside `Cell<P>` and using `Cell::set` / `as_ptr`.
+4. **Aliasing UB in `insert` src pointer** — `&*self.keymap.add(index)
+   as *const K` created a SharedReadOnly borrow that was invalidated
+   by the sibling `*mut K` destination borrow. Fixed by casting the
+   raw pointer directly (no reborrow).
+5. **Alignment panic on miri / strict allocators** — `Vec<u8>` does
+   not guarantee 8-byte alignment, which `BtreeNode::from_raw_ptr`
+   requires. Fixed by switching the node storage containers
+   (`BMap::new`, `DirectMap::data`, `BtreeMap::data`,
+   `convert_and_insert`, `convert_to_direct`) from `Vec<u8>` to a new
+   `pub` `AlignedBuffer` type that allocates via `alloc::alloc_zeroed`
+   with an 8-byte layout.
 
-**Impact**: violations of Rust's aliasing model. With current rustc
-codegen this does not miscompile in practice, but it remains UB by the
-language spec and may become observable under future optimisations or
-different codegen backends.
+## Open findings
 
-**Suggested remediation**: rebuild the node view *after* the raw copy,
-e.g. allocate via `AlignedBuffer::new`, `copy_from_slice`, then
-construct the node (`from_raw_ptr`) once — never mutating the backing
-buffer through a separate handle while other borrows are live.
+- **`BMap::read` panics on malformed input** (bmap.rs:733). libFuzzer
+  reproduces in seconds. Propagating the parser's `Result` (changing
+  the signature to `Result<Self, io::Error>`) is the right fix; not
+  done in this audit round.
 
-### 2. DoS panic in `BMap::read` (cargo-fuzz)
+## Clean fuzz runs
 
-`BMap::read` unwraps the `from_slice_ref` result:
-
-```rust
-let root = BtreeNode::<K, V, P>::from_slice_ref(buf)
-    .expect("failed to parse root node");
-```
-
-A malformed 8-byte header with `nchildren > capacity` panics the
-process. Repro: `echo -n -e '\xff\xff\x0a\xe0\xe0\xe0\xe0\xe0'`.
-
-libFuzzer finds this in seconds; two independent crash inputs are
-reproduced in `fuzz/artifacts/bmap_read/`.
-
-**Impact**: callers passing untrusted byte buffers can trigger a panic
-that aborts the current thread (or the process if `panic = 'abort'`).
-
-**Suggested remediation**: change `BMap::read`'s signature to
-`Result<Self, io::Error>` (mirroring `BtreeNode::from_slice_ref`), or
-document that callers must pre-validate. The underlying parsers already
-return `Result`; the unwrap is gratuitous.
-
-## Clean results
-
-`cargo +nightly fuzz run btree_node_from_slice` and
-`direct_node_from_slice` ran for ~30s each (~7M / ~4M executions)
-without triggering AddressSanitizer or panics. Combined with Miri's
-findings, the conclusion is that the parser is robust against malformed
-bytes when its `Result` return is respected; misuse comes from callers
-(`BMap::read`) and from the `copy_from_slice` aliasing pattern.
+- `btree_node_from_slice`: ~7M iterations, no ASan / panic findings.
+- `direct_node_from_slice`: ~4M iterations, no findings.

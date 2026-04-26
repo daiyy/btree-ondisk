@@ -21,6 +21,7 @@ use crate::node::{
     BtreeNode, DirectNode,
     BTREE_NODE_FLAG_LEAF, BTREE_NODE_FLAG_LARGE, BTREE_NODE_LEVEL_MIN
 };
+use crate::node::AlignedBuffer;
 use crate::btree::{BtreeNodeRef, BtreeNodeDirty};
 use crate::cache::NodeTieredCacheStats;
 
@@ -91,10 +92,10 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         C: NodeCache<P>,
 {
     #[maybe_async::maybe_async]
-    async fn convert_and_insert(&mut self, mut data: Vec<u8>, meta_block_size: usize, last_seq: P, limit: usize, key: K, val: V) -> Result<()> {
+    async fn convert_and_insert(&mut self, mut data: AlignedBuffer, meta_block_size: usize, last_seq: P, limit: usize, key: K, val: V) -> Result<()> {
         // collect all valid value from old direct root
         let mut old_kv = Vec::new();
-        let direct = DirectNode::<V>::from_slice(&mut data)?;
+        let direct = DirectNode::<V>::from_slice(data.as_mut_slice())?;
         for i in 0..direct.get_capacity() {
             let val = direct.get_val(i);
             if !val.is_invalid() {
@@ -104,14 +105,14 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         let old_ud = direct.get_userdata();
 
         // create new btree map
-        let mut v = vec![0; data.len()];
+        let mut v = AlignedBuffer::new(data.len()).expect("failed to allocate btree root");
         // init flags with leaf and large
-        v[0] = BTREE_NODE_FLAG_LEAF | BTREE_NODE_FLAG_LARGE;
+        v.as_mut_slice()[0] = BTREE_NODE_FLAG_LEAF | BTREE_NODE_FLAG_LARGE;
         let mut btree = BtreeMap {
             #[cfg(feature = "rc")]
-            root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&mut v)?)),
+            root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice())?)),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&mut v)?)),
+            root: Arc::new(Box::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice())?)),
             data: v,
             #[cfg(feature = "rc")]
             nodes: RefCell::new(HashMap::new()),
@@ -208,12 +209,12 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     #[maybe_async::maybe_async]
     async fn convert_to_direct(&mut self, _key: &K, input: &Vec<(K, V)>,
             root_node_size: usize, user_data: u32, last_seq: P, limit: usize, block_loader: L, node_tiered_cache: C) -> Result<()> {
-        let mut v = vec![0; root_node_size];
+        let mut v = AlignedBuffer::new(root_node_size).expect("failed to allocate direct root");
         let direct = DirectMap {
             #[cfg(feature = "rc")]
-            root: Rc::new(DirectNode::<V>::from_slice(&mut v)?),
+            root: Rc::new(DirectNode::<V>::from_slice(v.as_mut_slice())?),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(DirectNode::<V>::from_slice(&mut v)?)),
+            root: Arc::new(Box::new(DirectNode::<V>::from_slice(v.as_mut_slice())?)),
             data: v,
             #[cfg(feature = "rc")]
             last_seq: RefCell::new(last_seq),
@@ -265,14 +266,14 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
                 root_node_size, meta_block_size / 2);
         }
         // allocate temp space to init a root node as direct
-        let mut data = vec![0; root_node_size];
+        let mut data = AlignedBuffer::new(root_node_size).expect("failed to allocate root");
         // init direct root node at level 1
-        let root = DirectNode::<V>::from_slice(&mut data).expect("failed to init root node");
+        let root = DirectNode::<V>::from_slice(data.as_mut_slice()).expect("failed to init root node");
         // flags = 0, level = 1, nchild = 0;
         root.init(0, 1, 0);
 
         Self {
-            inner: NodeType::Direct(DirectMap::<K, V, P>::new(&data)),
+            inner: NodeType::Direct(DirectMap::<K, V, P>::new(data.as_slice())),
             meta_block_size,
             block_loader: Some(block_loader),
             node_tiered_cache: Some(node_tiered_cache),

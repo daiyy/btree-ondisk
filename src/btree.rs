@@ -201,7 +201,7 @@ impl<'a, K, V, P> BtreePath<'a, K, V, P>
 
 #[cfg(feature = "rc")]
 pub struct BtreeMap<'a, K, V, P, L: BlockLoader<P>, C: NodeCache<P>> {
-    pub data: Vec<u8>,
+    pub data: AlignedBuffer,
     pub root: BtreeNodeRef<'a, K, V, P>,
     pub nodes: RefCell<HashMap<P, BtreeNodeRef<'a, K, V, P>>>, // list of btree node in memory
     pub node_tiered_cache: C,
@@ -214,7 +214,7 @@ pub struct BtreeMap<'a, K, V, P, L: BlockLoader<P>, C: NodeCache<P>> {
 
 #[cfg(feature = "arc")]
 pub struct BtreeMap<'a, K, V, P, L: BlockLoader<P>, C: NodeCache<P>> {
-    pub data: Vec<u8>,
+    pub data: AlignedBuffer,
     pub root: BtreeNodeRef<'a, K, V, P>,
     pub nodes: AtomicRefCell<HashMap<P, BtreeNodeRef<'a, K, V, P>>>,
     pub node_tiered_cache: C,
@@ -984,13 +984,12 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
     }
 
     pub(crate) fn new(data: &[u8], meta_block_size: usize, block_loader: L, node_tiered_cache: C) -> Self {
-        let mut v = Vec::with_capacity(data.len());
-        v.extend_from_slice(data);
+        let mut v = AlignedBuffer::from_slice_copy(data);
         Self {
             #[cfg(feature = "rc")]
-            root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&mut v).expect("failed to init root node"))),
+            root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice()).expect("failed to init root node"))),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(BtreeNode::<K, V, P>::from_slice(&mut v).expect("failed to init root node"))),
+            root: Arc::new(Box::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice()).expect("failed to init root node"))),
             data: v,
             #[cfg(feature = "rc")]
             nodes: RefCell::new(HashMap::new()),

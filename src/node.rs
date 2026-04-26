@@ -21,14 +21,14 @@ const MIN_ALIGNED: usize = 8;
 /// Handles allocation and deallocation of aligned memory.
 /// When `ptr` is null, the buffer is a non-owning view (e.g. from `from_slice`).
 #[derive(Debug)]
-pub(crate) struct AlignedBuffer {
+pub struct AlignedBuffer {
     ptr: *mut u8,
     size: usize,
 }
 
 impl AlignedBuffer {
     /// Allocate a new zeroed buffer of the given size.
-    fn new(size: usize) -> Option<Self> {
+    pub fn new(size: usize) -> Option<Self> {
         let layout = std::alloc::Layout::from_size_align(size, MIN_ALIGNED).ok()?;
         // SAFETY: `layout` has non-zero size when `size > 0`; when size is 0
         // the layout's size is 0 and alloc_zeroed is UB — callers never
@@ -40,6 +40,27 @@ impl AlignedBuffer {
             return None;
         }
         Some(Self { ptr, size })
+    }
+
+    /// Allocate and copy from an existing byte slice. Returns an aligned copy.
+    pub fn from_slice_copy(src: &[u8]) -> Self {
+        let ab = Self::new(src.len()).expect("failed to allocate aligned buffer");
+        // SAFETY: `ab.ptr` is freshly allocated with `src.len()` bytes; `src`
+        // is a separate allocation.
+        unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), ab.ptr, src.len()); }
+        ab
+    }
+
+    pub fn len(&self) -> usize {
+        self.size
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        self.as_ref()
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        self.as_mut()
     }
 
     /// Create a non-owning view that records the size of an externally-owned
@@ -69,6 +90,21 @@ impl AlignedBuffer {
         unsafe { std::slice::from_raw_parts_mut(self.ptr, self.size) }
     }
 }
+
+impl Clone for AlignedBuffer {
+    fn clone(&self) -> Self {
+        if self.ptr.is_null() {
+            return Self::non_owning(self.size);
+        }
+        Self::from_slice_copy(self.as_ref())
+    }
+}
+
+// SAFETY: AlignedBuffer owns its allocation exclusively; the raw pointer is
+// only ever accessed via &self / &mut self, so Send/Sync mirror the byte
+// slice that it wraps.
+unsafe impl Send for AlignedBuffer {}
+unsafe impl Sync for AlignedBuffer {}
 
 impl Drop for AlignedBuffer {
     fn drop(&mut self) {
@@ -110,7 +146,6 @@ impl Drop for AlignedBuffer {
 /// 5. `header`/`keymap` are stored as raw pointers (not `&mut` references) so
 ///    that short-lived `&mut [u8]` views obtained via `as_u8_mut` do not
 ///    conflict with long-lived aliasing borrows under Stacked/Tree Borrows.
-#[derive(Debug)]
 #[repr(C, align(8))]
 pub struct BtreeNode<'a, K, V, P> {
     header: *mut NodeHeader,
@@ -118,7 +153,7 @@ pub struct BtreeNode<'a, K, V, P> {
     valptr: *mut u8,
     capacity: usize,    // kv capacity of this btree node
     buf: AlignedBuffer,
-    id: P,
+    id: Cell<P>,
     dirty: Cell<bool>,
     _pin: PhantomPinned,
     phantom: PhantomData<V>,
@@ -187,7 +222,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             valptr,
             capacity,
             buf: AlignedBuffer::non_owning(len),
-            id: P::invalid_value(),
+            id: Cell::new(P::invalid_value()),
             dirty: Cell::new(false),
             _pin: PhantomPinned,
             phantom: PhantomData,
@@ -220,7 +255,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         let data = unsafe { std::slice::from_raw_parts_mut(ab.ptr, ab.size) };
         let mut node = Self::from_slice(data).ok()?;
         node.buf = ab;
-        node.id = P::invalid_value();
+        node.id.set(P::invalid_value());
         Some(node)
     }
 
@@ -245,7 +280,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         let data = unsafe { std::slice::from_raw_parts_mut(ab.ptr, ab.size) };
         let mut node = Self::from_slice(data).ok()?;
         node.buf = ab;
-        node.id = id;
+        node.id.set(id);
         Some(node)
     }
 
@@ -473,17 +508,14 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     #[inline]
     pub fn id(&self) -> &P {
-        &self.id
+        // SAFETY: Cell::as_ptr returns a valid pointer to self.id; no
+        // concurrent mutation on the same node (see type invariants).
+        unsafe { &*self.id.as_ptr() }
     }
 
     #[inline]
     pub fn set_id(&self, id: P) {
-        let ptr = ptr::addr_of!(self.id) as *mut P;
-        // SAFETY: `self.id` is a P-typed field owned by this node; P: Copy
-        // (enforced by the impl bound), so ptr::write is legal.
-        unsafe {
-            ptr::write(ptr, id);
-        }
+        self.id.set(id);
     }
 
     #[inline]
@@ -735,7 +767,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             // insert). X must match the node layout (V for leaves, P for
             // internals). ptr::copy handles the overlapping forward shift.
             unsafe {
-                let ksrc: *const K = &*self.keymap.add(index) as *const K;
+                let ksrc: *const K = self.keymap.add(index) as *const K;
                 let vsrc: *const X = (self.valptr as *const X).add(index);
 
                 let kdst: *mut K = self.keymap.add(index + 1);

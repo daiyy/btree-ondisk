@@ -16,7 +16,7 @@ use crate::DEFAULT_CACHE_UNLIMITED;
 
 #[cfg(feature = "rc")]
 pub struct DirectMap<'a, K, V, P> {
-    pub data: Vec<u8>,
+    pub data: AlignedBuffer,
     pub root: Rc<DirectNode<'a, V>>,
     pub last_seq: RefCell<P>,
     pub dirty: RefCell<bool>,
@@ -26,7 +26,7 @@ pub struct DirectMap<'a, K, V, P> {
 
 #[cfg(feature = "arc")]
 pub struct DirectMap<'a, K, V, P> {
-    pub data: Vec<u8>,
+    pub data: AlignedBuffer,
     pub root: Arc<Box<DirectNode<'a, V>>>,
     pub last_seq: Arc<AtomicU64>,
     pub dirty: Arc<AtomicBool>,
@@ -169,13 +169,12 @@ impl<'a, K, V, P> DirectMap<'a, K, V, P>
     }
 
     pub(crate) fn new(data: &[u8]) -> Self {
-        let mut v = Vec::with_capacity(data.len());
-        v.extend_from_slice(data);
+        let mut v = AlignedBuffer::from_slice_copy(data);
         Self {
             #[cfg(feature = "rc")]
-            root: Rc::new(DirectNode::<V>::from_slice(&mut v).expect("failed to init root node")),
+            root: Rc::new(DirectNode::<V>::from_slice(v.as_mut_slice()).expect("failed to init root node")),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(DirectNode::<V>::from_slice(&mut v).expect("failed to init root node"))),
+            root: Arc::new(Box::new(DirectNode::<V>::from_slice(v.as_mut_slice()).expect("failed to init root node"))),
             data: v,
             #[cfg(feature = "rc")]
             last_seq: RefCell::new(P::invalid_value()),

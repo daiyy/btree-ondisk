@@ -213,11 +213,12 @@ async fn root_buffer_round_trip() {
     for k in 0..64u64 {
         let _ = m.insert(k, k + 1).await.unwrap();
     }
-    let mut buf = vec![0u8; m.as_slice().len()];
-    m.write(&mut buf);
+    let mut buf = btree_ondisk::node::AlignedBuffer::new(m.as_slice().len())
+        .expect("alloc aligned buffer");
+    m.write(buf.as_mut_slice());
 
     // reconstruct; new_btree/new_direct chosen automatically
-    let m2 = TestBMap::read(&buf, META, NullBlockLoader, NullNodeCache);
+    let m2 = TestBMap::read(buf.as_slice(), META, NullBlockLoader, NullNodeCache);
     // root should be re-usable; we cannot verify lookups without loader data
     // but we can confirm the type matches and userdata is preserved.
     assert_eq!(m.get_userdata(), m2.get_userdata());

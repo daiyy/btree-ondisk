@@ -19,7 +19,9 @@ case "$cmd" in
         MIRIFLAGS="${MIRIFLAGS:--Zmiri-disable-isolation}" \
             cargo +nightly miri test --lib
         MIRIFLAGS="${MIRIFLAGS:--Zmiri-disable-isolation}" \
-            cargo +nightly miri test --test coverage_boost btree_node_from_slice_errors
+            cargo +nightly miri test --test coverage_boost
+        MIRIFLAGS="${MIRIFLAGS:--Zmiri-disable-isolation}" \
+            cargo +nightly miri test --test bmap_tests
         ;;
     fuzz)
         secs="${2:-60}"

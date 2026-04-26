@@ -172,14 +172,12 @@ async fn display_impls() {
     // Display on btree
     let _ = format!("{}", m);
 
-    // Display on DirectNode / BtreeNode via root slice
-    let mut buf = m.as_slice().to_vec();
-    let bn = BtreeNode::<u64, u64, u64>::from_slice(&mut buf).unwrap();
+    // Display on DirectNode / BtreeNode via copy_from_slice (aligned alloc)
+    let bn = BtreeNode::<u64, u64, u64>::copy_from_slice(0u64, m.as_slice()).unwrap();
     let _ = format!("{}", bn);
 
     // direct node display
-    let mut buf = vec![0u8; ROOT];
-    let dn = DirectNode::<u64>::from_slice(&mut buf).unwrap();
+    let dn = DirectNode::<u64>::new(64).unwrap();
     dn.init(0, 1, 0);
     let _ = format!("{}", dn);
 }
