@@ -196,25 +196,33 @@ fn btree_node_from_slice_errors() {
 }
 
 #[test]
-#[cfg_attr(miri, ignore)] // depends on Vec<u8> alignment; miri is stricter
-fn btree_node_from_slice_errors_with_vec() {
-    // bad header: capacity < nchildren -> InvalidData
-    let mut buf = vec![0u8; 64];
-    buf[2] = 0xFF;
-    buf[3] = 0xFF;
-    assert!(BtreeNode::<u64, u64, u64>::from_slice(&mut buf).is_err());
+fn btree_node_from_slice_bad_nchild() {
+    // bad header: capacity < nchildren -> InvalidData.
+    // Use AlignedBuffer to guarantee an 8-aligned backing buffer (works
+    // under Miri where Vec<u8> isn't 8-aligned).
+    let mut buf = btree_ondisk::node::AlignedBuffer::new(64).unwrap();
+    let bytes = buf.as_mut_slice();
+    bytes[2] = 0xFF;
+    bytes[3] = 0xFF;
+    assert!(BtreeNode::<u64, u64, u64>::from_slice(bytes).is_err());
 
-    let mut buf2 = vec![0u8; 64];
-    buf2[2] = 0xFF;
-    buf2[3] = 0xFF;
-    assert!(DirectNode::<u64>::from_slice(&mut buf2).is_err());
+    let mut buf2 = btree_ondisk::node::AlignedBuffer::new(64).unwrap();
+    let bytes2 = buf2.as_mut_slice();
+    bytes2[2] = 0xFF;
+    bytes2[3] = 0xFF;
+    assert!(DirectNode::<u64>::from_slice(bytes2).is_err());
+}
 
-    // misaligned slice exercise: offset by 1 from a Vec always lands off 8-align
-    let mut buf3 = vec![0u8; 80];
+#[test]
+fn btree_node_from_slice_misaligned() {
+    // Offset 1 from an 8-aligned buffer guarantees a non-8-aligned view,
+    // exercising the alignment-error branch under any allocator.
+    let mut buf = btree_ondisk::node::AlignedBuffer::new(80).unwrap();
     let raw: &mut [u8] = unsafe {
-        std::slice::from_raw_parts_mut(buf3.as_mut_ptr().add(1), 40)
+        std::slice::from_raw_parts_mut(buf.as_mut_slice().as_mut_ptr().add(1), 40)
     };
-    let _ = BtreeNode::<u64, u64, u64>::from_slice(raw);
+    let err = BtreeNode::<u64, u64, u64>::from_slice(raw).err().unwrap();
+    assert_eq!(err.kind(), ErrorKind::InvalidInput);
 }
 
 #[test]
@@ -404,10 +412,9 @@ async fn btree_lookup_contig_across_siblings() {
 // --- BtreeNode flag helpers ---
 
 #[test]
-#[cfg_attr(miri, ignore)] // requires a Vec<u8> that happens to be 8-aligned; skip under miri
 fn btree_node_flag_helpers() {
-    let mut buf = vec![0u8; 256];
-    let n = BtreeNode::<u64, u64, u64>::from_slice(&mut buf).unwrap();
+    let mut buf = btree_ondisk::node::AlignedBuffer::new(256).unwrap();
+    let n = BtreeNode::<u64, u64, u64>::from_slice(buf.as_mut_slice()).unwrap();
     n.set_flags(0b11);
     assert_eq!(n.get_flags(), 0b11);
     n.clear_large();
