@@ -324,10 +324,7 @@ async fn memory_loader_read_write_dup() {
 
 // --- MemoryBlockLoader round-trip + eviction ---
 
-// Trigger actual eviction + reload via the backend loader.
-// The library evicts only nodes that are (1) NOT externally assigned
-// and (2) NOT dirty. So we clear dirty on newly-created internally-seq'd
-// nodes without ever assigning external seqs.
+// Full flush -> evict -> backend-reload round trip.
 #[tokio::test]
 async fn memory_loader_flush_and_evict() {
     let loader = MemoryBlockLoader::<u64>::new(META);
@@ -337,25 +334,35 @@ async fn memory_loader_flush_and_evict() {
         let _ = m.insert(k, k + 1).await.unwrap();
     }
 
-    // Drive assign_meta_node / BtreeNodeDirty accessors on first few dirty nodes,
-    // even if eviction is gated by the library's condition.
+    // Flush: assign every dirty node an external seq, persist its bytes to
+    // the loader keyed by that seq, then clear the node's dirty bit.
     let dirty = m.lookup_dirty();
     let mut seq = VALID_EXTERNAL_ASSIGN_MASK + 1u64;
-    for n in dirty.iter().take(3) {
+    let mut assigned: Vec<u64> = Vec::with_capacity(dirty.len());
+    for n in &dirty {
         let _ = n.size();
         let _ = n.as_slice().len();
         m.assign_meta_node(seq, n.clone()).await.unwrap();
+        assigned.push(seq);
         seq += 1;
     }
-
-    // Clear dirty without assigning external seq on the rest, making them
-    // eligible for eviction, then shrink cache to trigger evict().
+    for (n, s) in dirty.iter().zip(assigned.into_iter()) {
+        loader.write(s, n.as_slice());
+    }
     for n in dirty { n.clear_dirty(); }
     m.clear_dirty();
-    m.set_cache_limit(2);
 
-    let stat = m.get_stat();
-    assert!(stat.btree);
+    let nodes_before = m.get_stat().nodes_total;
+    m.set_cache_limit(2);
+    let nodes_after = m.get_stat().nodes_total;
+    assert!(nodes_after < nodes_before,
+        "expected eviction to shrink node set: {nodes_before} -> {nodes_after}");
+
+    // Subsequent lookups must succeed by reloading evicted nodes from the
+    // backend loader (exercises btree.rs get_from_nodes load path).
+    for k in (0..256u64).step_by(17) {
+        assert_eq!(m.lookup(&k).await.unwrap(), k + 1);
+    }
 }
 
 // --- shrink-down btree to direct (delete many keys) ---

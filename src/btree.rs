@@ -856,11 +856,12 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
                     .filter_map(|(key, node)| {
                         let id = node.id();
                         assert!(key == id);
-                        if id.is_valid_extern_assign() || node.is_dirty() {
+                        if !id.is_valid_extern_assign() || node.is_dirty() {
                             // skip node that:
-                            //   - is internally used (not yet assigned value)
+                            //   - is internally used (not yet assigned an
+                            //     external id, so the backend has no copy)
                             // or
-                            //   - is dirty
+                            //   - is dirty (needs to be flushed first)
                             None
                         } else {
                             Some(node.clone())
