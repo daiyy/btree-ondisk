@@ -1050,7 +1050,10 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             },
             3 => {
                 let nchild = root.get_nchild();
-                if nchild > 1 {
+                if nchild != 1 {
+                    // originally if condition is: nchild > 1
+                    // >1: tree is non-trivial at height 3;
+                    // 0: malformed state that we should not try to convert.
                     return Ok(false);
                 }
                 // get back only child node, wee need to check it
@@ -1064,6 +1067,9 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
 
         // convert all to u64 to compare
         let nchild = node.get_nchild();
+        if nchild == 0 {
+            return Ok(false);
+        }
         let maxkey = (*node.get_key(nchild - 1)).into();
         let next_maxkey = if nchild > 1 {
             (*node.get_key(nchild - 2)).into()
