@@ -277,7 +277,7 @@ impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
     #[maybe_async::maybe_async]
     async fn delete(&self, key: &K) -> Result<()> {
         let index = (*key).into() as usize;
-        if index > self.root.get_capacity() ||
+        if index >= self.root.get_capacity() ||
                 self.root.get_val(index).is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, "delete key exceed direct node space or not exists"));
         }

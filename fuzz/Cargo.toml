@@ -9,6 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+tokio = { version = "1", features = ["rt"] }
 
 [dependencies.btree-ondisk]
 path = ".."
@@ -30,6 +31,13 @@ bench = false
 [[bin]]
 name = "bmap_read"
 path = "fuzz_targets/bmap_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bmap_ops"
+path = "fuzz_targets/bmap_ops.rs"
 test = false
 doc = false
 bench = false

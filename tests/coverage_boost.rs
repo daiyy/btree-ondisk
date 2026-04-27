@@ -104,6 +104,12 @@ async fn direct_delete_and_seek_errors() {
         m.delete(&0).await.err().unwrap().kind(),
         ErrorKind::NotFound
     );
+    // delete key == capacity (boundary) must not OOB-read; see bmap_ops fuzz seed.
+    // direct root_node_size=56, u64 V -> capacity = (56-8)/8 = 6
+    assert_eq!(
+        m.delete(&6).await.err().unwrap().kind(),
+        ErrorKind::NotFound
+    );
 }
 
 #[tokio::test]

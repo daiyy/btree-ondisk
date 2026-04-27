@@ -48,7 +48,7 @@ seed_corpus() {
 fuzz_run() {
     local secs="$1"
     seed_corpus
-    for t in btree_node_from_slice direct_node_from_slice bmap_read; do
+    for t in btree_node_from_slice direct_node_from_slice bmap_read bmap_ops; do
         echo "=== fuzz $t (${secs}s) ==="
         cargo +nightly fuzz run "$t" -- -max_total_time="$secs" || return 1
     done
