@@ -13,10 +13,10 @@ const MAX_ITER: usize = 1000000;
 async fn main() {
     println!("##### start single task #####");
     single().await;
-    println!("");
+    println!();
     println!("##### start concurrncy with {} tasks #####", MAX_CONCURRENCY);
     multi().await;
-    println!("");
+    println!();
     println!("##### start concurrncy use atomic inc counter with {} tasks #####", MAX_CONCURRENCY);
     multi_atomic().await;
 }
@@ -105,8 +105,8 @@ async fn multi() {
                 let file = clone.lock().await;
                 let _ = file.bmap.lookup(&i).await;
             }
-            let avg = start.elapsed() / iter as u32;
-            avg
+            
+            start.elapsed() / iter as u32
         });
     }
     let mut total_avg: Duration = Duration::new(0, 0);
@@ -124,12 +124,12 @@ async fn multi() {
             let start = Instant::now();
             let begin = blk_idx_start + (x * iter) as u64;
             let end = blk_idx_start + ((x + 1) * iter) as u64;
-            for i in begin..end as u64 {
+            for i in begin..end {
                 let mut file = clone.lock().await;
                 let _ = file.bmap.insert(i, i).await;
             }
-            let avg = start.elapsed() / iter as u32;
-            avg
+            
+            start.elapsed() / iter as u32
         });
     }
     let mut total_avg: Duration = Duration::new(0, 0);
@@ -147,12 +147,12 @@ async fn multi() {
             let start = Instant::now();
             let begin = blk_idx_start + (x * iter) as u64;
             let end = blk_idx_start + ((x + 1) * iter) as u64;
-            for i in begin..end as u64 {
+            for i in begin..end {
                 let file = clone.lock().await;
                 let _ = file.bmap.assign(&i, i | VALID_EXTERNAL_ASSIGN_MASK, None).await;
             }
-            let avg = start.elapsed() / iter as u32;
-            avg
+            
+            start.elapsed() / iter as u32
         });
     }
     let mut total_avg: Duration = Duration::new(0, 0);
@@ -170,12 +170,12 @@ async fn multi() {
             let start = Instant::now();
             let begin = blk_idx_start + (x * iter) as u64;
             let end = blk_idx_start + ((x + 1) * iter) as u64;
-            for i in begin..end as u64 {
+            for i in begin..end {
                 let file = clone.lock().await;
                 let _ = file.bmap.propagate(&i, None).await;
             }
-            let avg = start.elapsed() / iter as u32;
-            avg
+            
+            start.elapsed() / iter as u32
         });
     }
     let mut total_avg: Duration = Duration::new(0, 0);
@@ -223,8 +223,8 @@ async fn multi_atomic() {
                 let file = clone.lock().await;
                 let _ = file.bmap.lookup(&i).await;
             }
-            let avg = start.elapsed() / iter as u32;
-            avg
+            
+            start.elapsed() / iter as u32
         });
     }
     let mut total_avg: Duration = Duration::new(0, 0);
@@ -250,8 +250,8 @@ async fn multi_atomic() {
                 let mut file = clone.lock().await;
                 let _ = file.bmap.insert(i, i).await;
             }
-            let avg = start.elapsed() / iter as u32;
-            avg
+            
+            start.elapsed() / iter as u32
         });
     }
     let mut total_avg: Duration = Duration::new(0, 0);
@@ -277,8 +277,8 @@ async fn multi_atomic() {
                 let file = clone.lock().await;
                 let _ = file.bmap.assign(&i, i | VALID_EXTERNAL_ASSIGN_MASK, None).await;
             }
-            let avg = start.elapsed() / iter as u32;
-            avg
+            
+            start.elapsed() / iter as u32
         });
     }
     let mut total_avg: Duration = Duration::new(0, 0);
@@ -304,8 +304,8 @@ async fn multi_atomic() {
                 let file = clone.lock().await;
                 let _ = file.bmap.propagate(&i, None).await;
             }
-            let avg = start.elapsed() / iter as u32;
-            avg
+            
+            start.elapsed() / iter as u32
         });
     }
     let mut total_avg: Duration = Duration::new(0, 0);

@@ -48,12 +48,12 @@ impl<'a> MemoryFile<'a> {
 
     fn dirty_count(&self) -> usize {
         let dirty_meta_vec = self.bmap.lookup_dirty();
-        return dirty_meta_vec.len();
+        dirty_meta_vec.len()
     }
 
     #[maybe_async::maybe_async]
     async fn flush(&mut self) -> Result<()> {
-        if self.data_blocks_dirty.len() == 0 && !self.bmap.dirty() {
+        if self.data_blocks_dirty.is_empty() && !self.bmap.dirty() {
             return Ok(());
         }
 
@@ -70,7 +70,7 @@ impl<'a> MemoryFile<'a> {
 
         for blk_idx in self.data_blocks_dirty.iter() {
             let blk_ptr = self.seq;
-            self.bmap.assign(&blk_idx, blk_ptr, None).await?;
+            self.bmap.assign(blk_idx, blk_ptr, None).await?;
             self.seq += 1;
         }
 
@@ -113,7 +113,7 @@ async fn run() -> Result<()> {
     for _ in 0..write_iter {
         let blk_off = rng.gen_range(0..max_file_size);
         let _ = blkoffs.insert(blk_off);
-        let _ = file.write(blk_off).await?;
+        file.write(blk_off).await?;
     }
     file.flush().await?;
     assert!(file.dirty_count() == 0);
@@ -131,7 +131,7 @@ async fn run() -> Result<()> {
     for _ in 0..write_iter {
         let blk_off = rng.gen_range(0..max_file_size);
         let _ = blkoffs.insert(blk_off);
-        let _ = file.write(blk_off).await?;
+        file.write(blk_off).await?;
     }
     file.flush().await?;
     assert!(file.dirty_count() == 0);

@@ -72,7 +72,7 @@ impl<'a> MemoryFile<'a> {
         assert!(res.is_some());
         // update dirty list
         let _ = self.data_blocks_dirty.insert(blk_idx);
-        return Ok(());
+        Ok(())
     }
 
     #[maybe_async::maybe_async]
@@ -82,7 +82,7 @@ impl<'a> MemoryFile<'a> {
             // could be on dirty list or not
             let _ = self.data_blocks_dirty.remove(&blk_idx);
         }
-        if let Some(_) = self.data_blocks_tracker.remove(&blk_idx) {
+        if self.data_blocks_tracker.remove(&blk_idx).is_some() {
             assert!(res.is_ok());
             return Ok(());
         }
@@ -100,12 +100,12 @@ impl<'a> MemoryFile<'a> {
 
     fn dirty_count(&self) -> usize {
         let dirty_meta_vec = self.bmap.lookup_dirty();
-        return dirty_meta_vec.len();
+        dirty_meta_vec.len()
     }
 
     #[maybe_async::maybe_async]
     async fn flush(&mut self) -> Result<()> {
-        if self.data_blocks_dirty.len() == 0 && !self.bmap.dirty() {
+        if self.data_blocks_dirty.is_empty() && !self.bmap.dirty() {
             return Ok(());
         }
 
@@ -123,7 +123,7 @@ impl<'a> MemoryFile<'a> {
         let mut v = Vec::new();
         for blk_idx in self.data_blocks_dirty.iter() {
             let blk_ptr = self.seq;
-            self.bmap.assign_data_node(blk_idx, blk_ptr.clone()).await?;
+            self.bmap.assign_data_node(blk_idx, blk_ptr).await?;
             v.push((*blk_idx, blk_ptr));
             self.seq += 1;
         }
@@ -231,7 +231,7 @@ async fn run() -> Result<()> {
     file.flush().await?;
     assert!(file.dirty_count() == 0);
     file.dump_stat();
-    println!("");
+    println!();
 
     println!("=== random read/write/delete ===");
     let iter = 10_000_000;
@@ -239,7 +239,7 @@ async fn run() -> Result<()> {
     file.flush().await?;
     assert!(file.dirty_count() == 0);
     file.dump_stat();
-    println!("");
+    println!();
 
     println!("=== random read/write/delete ===");
     let iter = 100_000_000;
@@ -247,7 +247,7 @@ async fn run() -> Result<()> {
     file.flush().await?;
     assert!(file.dirty_count() == 0);
     file.dump_stat();
-    println!("");
+    println!();
 
     println!("=== random read/write/delete ===");
     let iter = 10_000_000;
@@ -255,12 +255,13 @@ async fn run() -> Result<()> {
     file.flush().await?;
     assert!(file.dirty_count() == 0);
     file.dump_stat();
-    println!("");
+    println!();
 
     println!("=== cleanup ====");
     let res = cleanup(&mut file).await;
     println!("truncate result {res:?}");
-    let res = file.flush().await?;
+    let res = ();
+    file.flush().await?;
     println!("flush result {res:?}");
     assert!(file.dirty_count() == 0);
     file.dump_stat();

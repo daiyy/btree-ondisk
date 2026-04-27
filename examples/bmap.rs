@@ -24,7 +24,7 @@ async fn main() {
     let bar = ProgressBar::new(num_blocks);
     bar.enable_steady_tick(std::time::Duration::new(1, 0));
     let now = Instant::now();
-    for i in 0..num_blocks as u64 {
+    for i in 0..num_blocks {
         // NOTICE:
         //   0 is invalid value for type u64, play very carefully with invalid value
         let _ = bmap.insert(i, i).await;
@@ -39,7 +39,7 @@ async fn main() {
     println!("  metadata stat {:?}", bmap.get_stat());
     drop(bar);
     drop(bmap);
-    println!("");
+    println!();
 
     // creating another
     let root_node_size = 56;
@@ -57,7 +57,7 @@ async fn main() {
     let bar = ProgressBar::new(num_blocks);
     bar.enable_steady_tick(std::time::Duration::new(1, 0));
     let now = Instant::now();
-    for i in 0..num_blocks as u64 {
+    for i in 0..num_blocks {
         // NOTICE:
         //   0 is invalid value for type u64, play very carefully with invalid value
         let _ = bmap.insert(i, i).await;
@@ -71,7 +71,7 @@ async fn main() {
     println!("  time cost to create 5TiB metadata [{:?}], memory usage: [{}]", now.elapsed(), human_bytes(total_bytes as f64));
     println!("  metadata stat {:?}", bmap.get_stat());
     drop(bar);
-    println!("");
+    println!();
 
     // truncate file
     let trunc_to = 3;
@@ -84,7 +84,7 @@ async fn main() {
     println!("  metadata stat {:?}", bmap.get_stat());
     println!("  last key now is {:?}", bmap.last_key().await.unwrap());
     drop(bmap);
-    println!("");
+    println!();
 
     // enlarge data block size
     let root_node_size = 56;
@@ -102,7 +102,7 @@ async fn main() {
     let bar = ProgressBar::new(num_blocks);
     bar.enable_steady_tick(std::time::Duration::new(1, 0));
     let now = Instant::now();
-    for i in 0..num_blocks as u64 {
+    for i in 0..num_blocks {
         // NOTICE:
         //   0 is invalid value for type u64, play very carefully with invalid value
         let _ = bmap.insert(i, i).await;
@@ -116,7 +116,7 @@ async fn main() {
     println!("  time cost to create 5TiB metadata [{:?}], memory usage: [{}]", now.elapsed(), human_bytes(total_bytes as f64));
     println!("  metadata stat {:?}", bmap.get_stat());
     drop(bar);
-    println!("");
+    println!();
 
     // truncate file
     let trunc_to = 3;

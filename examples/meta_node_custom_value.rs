@@ -128,7 +128,7 @@ impl<'a, const N: usize> MemoryFile<'a, N> {
         assert!(res.is_some());
         // update dirty list
         let _ = self.data_blocks_dirty.insert(blk_idx);
-        return Ok(());
+        Ok(())
     }
 
     #[maybe_async::maybe_async]
@@ -138,7 +138,7 @@ impl<'a, const N: usize> MemoryFile<'a, N> {
             // could be on dirty list or not
             let _ = self.data_blocks_dirty.remove(&blk_idx);
         }
-        if let Some(_) = self.kv_tracker.remove(&blk_idx) {
+        if self.kv_tracker.remove(&blk_idx).is_some() {
             assert!(res.is_ok());
             return Ok(());
         }
@@ -148,12 +148,12 @@ impl<'a, const N: usize> MemoryFile<'a, N> {
 
     fn dirty_count(&self) -> usize {
         let dirty_meta_vec = self.bmap.lookup_dirty();
-        return dirty_meta_vec.len();
+        dirty_meta_vec.len()
     }
 
     #[maybe_async::maybe_async]
     async fn flush(&mut self) -> Result<()> {
-        if self.data_blocks_dirty.len() == 0 && !self.bmap.dirty() {
+        if self.data_blocks_dirty.is_empty() && !self.bmap.dirty() {
             return Ok(());
         }
 
@@ -265,13 +265,14 @@ async fn run<const N: usize>(iter: usize, loop_count: usize) -> Result<()> {
         file.flush().await?;
         assert!(file.dirty_count() == 0);
         file.dump_stat();
-        println!("");
+        println!();
     }
 
     println!("=== cleanup ====");
     let res = cleanup(&mut file).await;
     println!("truncate result {res:?}");
-    let res = file.flush().await?;
+    let res = ();
+    file.flush().await?;
     println!("flush result {res:?}");
     assert!(file.dirty_count() == 0);
     file.dump_stat();
@@ -304,9 +305,9 @@ fn main() {
         .unwrap()
         .block_on(async {
             run::<32>(i, l).await?;
-            println!("");
+            println!();
             run::<64>(i, l).await?;
-            println!("");
+            println!();
             run::<128>(i, l).await
 		});
     #[cfg(feature = "sync-api")]
