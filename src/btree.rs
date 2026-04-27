@@ -20,9 +20,9 @@ use crate::DEFAULT_CACHE_UNLIMITED;
 
 pub(crate) type BtreeLevel = usize;
 #[cfg(feature = "rc")]
-pub(crate) type BtreeNodeRef<'a, K, V, P> = Rc<Box<BtreeNode<'a, K, V, P>>>;
+pub(crate) type BtreeNodeRef<'a, K, V, P> = Rc<BtreeNode<'a, K, V, P>>;
 #[cfg(feature = "arc")]
-pub(crate) type BtreeNodeRef<'a, K, V, P> = Arc<Box<BtreeNode<'a, K, V, P>>>;
+pub(crate) type BtreeNodeRef<'a, K, V, P> = Arc<BtreeNode<'a, K, V, P>>;
 
 #[derive(Clone)]
 pub struct BtreeNodeDirty<'a, K, V, P>(pub(crate) BtreeNodeRef<'a, K, V, P>);
@@ -39,12 +39,12 @@ impl<'a, K, V, P> BtreeNodeDirty<'a, K, V, P>
 
     pub fn size(&self) -> usize {
         // rc/arc -> box -> inner slice -> len
-        self.0.as_ref().as_ref().as_u8_ref().len()
+        self.0.as_ref().as_u8_ref().len()
     }
 
     pub fn as_slice(&self) -> &[u8] {
         // rc/arc -> box -> inner slice
-        self.0.as_ref().as_ref().as_u8_ref()
+        self.0.as_ref().as_u8_ref()
     }
 
     pub fn clear_dirty(&self) {
@@ -407,9 +407,9 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             if found {
                 node.do_update();
                 #[cfg(feature = "rc")]
-                let n = Rc::new(Box::new(node));
+                let n = Rc::new(node);
                 #[cfg(feature = "arc")]
-                let n = Arc::new(Box::new(node));
+                let n = Arc::new(node);
                 let mut list = self.nodes.borrow_mut();
                 list.insert(*id, n.clone());
                 drop(list);
@@ -429,9 +429,9 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             })?;
             node.do_update();
             #[cfg(feature = "rc")]
-            let n = Rc::new(Box::new(node));
+            let n = Rc::new(node);
             #[cfg(feature = "arc")]
-            let n = Arc::new(Box::new(node));
+            let n = Arc::new(node);
             let mut list = self.nodes.borrow_mut();
             list.insert(*id, n.clone());
             drop(list);
@@ -446,9 +446,9 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
                 }
                 if let Some(node) = BtreeNode::<K, V, P>::copy_from_slice(i, &data) {
                     #[cfg(feature = "rc")]
-                    let n = Rc::new(Box::new(node));
+                    let n = Rc::new(node);
                     #[cfg(feature = "arc")]
-                    let n = Arc::new(Box::new(node));
+                    let n = Arc::new(node);
                     let mut list = self.nodes.borrow_mut();
                     list.insert(i, n.clone());
                     drop(list);
@@ -470,9 +470,9 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
                 node.do_reinit::<P>();
             }
             #[cfg(feature = "rc")]
-            let n = Rc::new(Box::new(node));
+            let n = Rc::new(node);
             #[cfg(feature = "arc")]
-            let n = Arc::new(Box::new(node));
+            let n = Arc::new(node);
             if let Some(_oldnode) = list.insert(*id, n.clone()) {
                 panic!("value {} is already in nodes list", id);
             }
@@ -889,7 +889,7 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             let n = self.nodes.borrow_mut().remove(id);
             assert!(n.is_some());
             let node = n.unwrap();
-            self.node_tiered_cache.push(node.id(), node.as_ref().as_ref().as_u8_ref());
+            self.node_tiered_cache.push(node.id(), node.as_ref().as_u8_ref());
             count -= 1;
         }
         self.node_tiered_cache.evict();
@@ -988,9 +988,9 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         let mut v = AlignedBuffer::from_slice_copy(data);
         Self {
             #[cfg(feature = "rc")]
-            root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice()).expect("failed to init root node"))),
+            root: Rc::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice()).expect("failed to init root node")),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice()).expect("failed to init root node"))),
+            root: Arc::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice()).expect("failed to init root node")),
             data: v,
             #[cfg(feature = "rc")]
             nodes: RefCell::new(HashMap::new()),

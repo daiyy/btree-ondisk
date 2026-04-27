@@ -144,7 +144,7 @@ impl Drop for AlignedBuffer {
 /// 3. On a single node, concurrent writes are forbidden. Under `rc` this is
 ///    guaranteed by single-threaded execution; under `arc` the library
 ///    serializes writes at higher levels (each node is held behind
-///    `Arc<Box<...>>` and external containers wrap it in `AtomicRefCell`).
+///    `Arc<...>` and external containers wrap it in `AtomicRefCell`).
 /// 4. `get_val<X>` / `set_val<X>` require the caller to pick `X == V` for
 ///    leaf nodes and `X == P` for internal nodes. Mismatched `X` yields UB.
 /// 5. `header`/`keymap` are stored as raw pointers (not `&mut` references) so
@@ -170,7 +170,7 @@ pub struct BtreeNode<'a, K, V, P> {
 // generic parameters themselves are thread-safe (Send + Sync), sharing the
 // node across threads is sound provided the caller serializes mutation on
 // any given node (the library enforces this by holding each node behind
-// Arc<Box<...>> and using AtomicRefCell for its owning map).
+// Arc<...> and using AtomicRefCell for its owning map).
 #[cfg(feature = "arc")]
 unsafe impl<'a, K: Send, V: Send, P: Send> Send for BtreeNode<'a, K, V, P> {}
 #[cfg(feature = "arc")]

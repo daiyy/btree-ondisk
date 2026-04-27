@@ -110,9 +110,9 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         v.as_mut_slice()[0] = BTREE_NODE_FLAG_LEAF | BTREE_NODE_FLAG_LARGE;
         let mut btree = BtreeMap {
             #[cfg(feature = "rc")]
-            root: Rc::new(Box::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice())?)),
+            root: Rc::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice())?),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice())?)),
+            root: Arc::new(BtreeNode::<K, V, P>::from_slice(v.as_mut_slice())?),
             data: v,
             #[cfg(feature = "rc")]
             nodes: RefCell::new(HashMap::new()),
@@ -214,7 +214,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
             #[cfg(feature = "rc")]
             root: Rc::new(DirectNode::<V>::from_slice(v.as_mut_slice())?),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(DirectNode::<V>::from_slice(v.as_mut_slice())?)),
+            root: Arc::new(DirectNode::<V>::from_slice(v.as_mut_slice())?),
             data: v,
             #[cfg(feature = "rc")]
             last_seq: RefCell::new(last_seq),

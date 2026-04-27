@@ -27,7 +27,7 @@ pub struct DirectMap<'a, K, V, P> {
 #[cfg(feature = "arc")]
 pub struct DirectMap<'a, K, V, P> {
     pub data: AlignedBuffer,
-    pub root: Arc<Box<DirectNode<'a, V>>>,
+    pub root: Arc<DirectNode<'a, V>>,
     pub last_seq: Arc<AtomicU64>,
     pub dirty: Arc<AtomicBool>,
     pub cache_limit: Arc<AtomicUsize>,
@@ -174,7 +174,7 @@ impl<'a, K, V, P> DirectMap<'a, K, V, P>
             #[cfg(feature = "rc")]
             root: Rc::new(DirectNode::<V>::from_slice(v.as_mut_slice()).expect("failed to init root node")),
             #[cfg(feature = "arc")]
-            root: Arc::new(Box::new(DirectNode::<V>::from_slice(v.as_mut_slice()).expect("failed to init root node"))),
+            root: Arc::new(DirectNode::<V>::from_slice(v.as_mut_slice()).expect("failed to init root node")),
             data: v,
             #[cfg(feature = "rc")]
             last_seq: RefCell::new(P::invalid_value()),
