@@ -437,7 +437,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
                         btree.data.len(), btree.root.get_userdata(), btree.last_seq.take(), btree.get_cache_limit(),
                             btree.block_loader.clone(), btree.node_tiered_cache.clone()).await?;
                     #[cfg(feature = "arc")]
-                    let _ = self.convert_to_direct(key, &v,
+                    self.convert_to_direct(key, &v,
                         btree.data.len(), btree.root.get_userdata(), btree.last_seq.load(Ordering::SeqCst).into(), btree.get_cache_limit(),
                             btree.block_loader.clone(), btree.node_tiered_cache.clone()).await?;
                     return Ok(());
@@ -592,11 +592,11 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
                         return direct.assign(key, *newval).await;
                     },
                     None => {
-                        return Err(std::io::Error::new(
+                        Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
                             format!("V type {} and P type {} differ; assign_data_node requires V == P on a direct map",
                                 std::any::type_name::<V>(), std::any::type_name::<P>()),
-                        ));
+                        ))
                     },
                 }
             },
@@ -653,11 +653,11 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
                         return direct.assign(key, *newval).await;
                     },
                     None => {
-                        return Err(std::io::Error::new(
+                        Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
                             format!("V type {} and P type {} differ; assign_data_node requires V == P on a direct map",
                                 std::any::type_name::<V>(), std::any::type_name::<P>()),
-                        ));
+                        ))
                     },
                 }
             },
