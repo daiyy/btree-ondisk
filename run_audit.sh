@@ -11,6 +11,8 @@
 #   ./run_audit.sh miri-arc      # run Miri on arc+tokio-runtime
 #   ./run_audit.sh miri-all      # run both
 #   ./run_audit.sh fuzz [secs]   # run each fuzz target for N seconds (default 60)
+#   ./run_audit.sh fuzz-arc [secs]   # same but under arc feature
+#   ./run_audit.sh fuzz-all [secs]   # run both rc and arc
 #   ./run_audit.sh fuzz-quick    # CI-friendly: seed from fuzz/seeds/* + 30s each
 #   ./run_audit.sh seed          # just (re)seed corpus from fuzz/seeds/*
 
@@ -45,12 +47,18 @@ seed_corpus() {
     fi
 }
 
+# $1: seconds, $2: feature set ("rc" or "arc")
 fuzz_run() {
     local secs="$1"
+    local feat="${2:-rc}"
     seed_corpus
+    local flags=()
+    if [[ "$feat" == "arc" ]]; then
+        flags=(--no-default-features --features arc)
+    fi
     for t in btree_node_from_slice direct_node_from_slice bmap_read bmap_ops; do
-        echo "=== fuzz $t (${secs}s) ==="
-        cargo +nightly fuzz run "$t" -- -max_total_time="$secs" || return 1
+        echo "=== fuzz $t ($feat, ${secs}s) ==="
+        cargo +nightly fuzz run "${flags[@]}" "$t" -- -max_total_time="$secs" || return 1
     done
 }
 
@@ -58,11 +66,13 @@ case "$cmd" in
     miri)       miri_rc ;;
     miri-arc)   miri_arc ;;
     miri-all)   miri_rc; miri_arc ;;
-    fuzz)       fuzz_run "${2:-60}" ;;
-    fuzz-quick) fuzz_run 30 ;;
+    fuzz)       fuzz_run "${2:-60}" rc ;;
+    fuzz-arc)   fuzz_run "${2:-60}" arc ;;
+    fuzz-all)   fuzz_run "${2:-60}" rc; fuzz_run "${2:-60}" arc ;;
+    fuzz-quick) fuzz_run 30 rc ;;
     seed)       seed_corpus ;;
     *)
-        echo "usage: $0 {miri|miri-arc|miri-all|fuzz [secs]|fuzz-quick|seed}" >&2
+        echo "usage: $0 {miri|miri-arc|miri-all|fuzz [secs]|fuzz-arc [secs]|fuzz-all [secs]|fuzz-quick|seed}" >&2
         exit 2
         ;;
 esac

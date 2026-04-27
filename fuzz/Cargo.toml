@@ -7,12 +7,18 @@ edition = "2021"
 [package.metadata]
 cargo-fuzz = true
 
+[features]
+default = ["rc"]
+rc = ["btree-ondisk/rc", "btree-ondisk/value-check", "btree-ondisk/tokio-runtime"]
+arc = ["btree-ondisk/arc", "btree-ondisk/value-check", "btree-ondisk/tokio-runtime"]
+
 [dependencies]
 libfuzzer-sys = "0.4"
 tokio = { version = "1", features = ["rt"] }
 
 [dependencies.btree-ondisk]
 path = ".."
+default-features = false
 
 [[bin]]
 name = "btree_node_from_slice"
