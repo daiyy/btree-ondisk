@@ -423,24 +423,45 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         }
     }
 
+    /// Read a value slot as type `X`.
+    ///
+    /// # Caller contract (not enforced by the type system)
+    ///
+    /// - `X` must match the node's storage: `V` for leaves
+    ///   (`is_leaf() == true`), `P` for internal nodes.
+    /// - `index` must be `< self.get_capacity()`.
+    ///
+    /// Violating either is **undefined behaviour** — bytes are
+    /// reinterpreted through the wrong type or read past the end of the
+    /// buffer. The function stays `safe` for ergonomic reasons; debug
+    /// builds add a `debug_assert!` on `size_of::<X>()` to catch the most
+    /// common mistakes, but size-compatible mismatches (e.g. `u64` vs
+    /// `i64`) slip through. Prefer the higher-level `BtreeMap` API.
     #[inline]
     pub fn get_val<X>(&self, index: usize) -> &X {
-        // SAFETY: `X` must match the node type: `X == V` for a leaf node,
-        // `X == P` for an internal node. Mismatched `X` is UB.
-        // `valptr` was computed in `from_raw_ptr` to point at the start of
-        // `capacity` values of the appropriate type; indexing is bounds-checked
-        // by the subsequent slice indexing.
+        debug_assert_eq!(
+            std::mem::size_of::<X>(),
+            if self.is_leaf() { std::mem::size_of::<V>() } else { std::mem::size_of::<P>() },
+            "get_val<X>: X size does not match the node's slot type",
+        );
+        // SAFETY: caller contract above; valptr spans `capacity` elements
+        // of type X, index is bounds-checked by the slice indexing.
         let slice = unsafe {
             std::slice::from_raw_parts(self.valptr as *const X, self.capacity)
         };
         &slice[index]
     }
 
+    /// Write a value slot of type `X`. Same contract as [`Self::get_val`].
     #[inline]
     pub fn set_val<X>(&self, index: usize, val: &X) {
-        // SAFETY: same `X` requirement as `get_val`. `index` must be < capacity;
-        // the library never calls this with an out-of-bounds index (enforced
-        // by the surrounding insert/split/merge logic).
+        debug_assert_eq!(
+            std::mem::size_of::<X>(),
+            if self.is_leaf() { std::mem::size_of::<V>() } else { std::mem::size_of::<P>() },
+            "set_val<X>: X size does not match the node's slot type",
+        );
+        debug_assert!(index < self.capacity, "set_val<X>: index {} >= capacity {}", index, self.capacity);
+        // SAFETY: see `get_val`.
         unsafe {
             let dst = (self.valptr as *mut X).add(index);
             ptr::copy_nonoverlapping(ptr::addr_of!(*val), dst, 1)
