@@ -206,11 +206,11 @@ impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
     #[maybe_async::maybe_async]
     async fn lookup(&self, key: &K, level: usize) -> Result<V> {
         let index = (*key).into() as usize;
-        if self.root.get_capacity() == 0 {
-            // handle case if root node is too small for a V
-            return Err(Error::new(ErrorKind::NotFound, "direct node not eligible for lookup"));
-        }
-        if index > self.root.get_capacity() - 1 || level != 1 {
+        if index >= self.root.get_capacity() || level != 1 {
+            if self.root.get_capacity() == 0 {
+                // handle case if root node is too small for a V
+                return Err(Error::new(ErrorKind::NotFound, "direct node not eligible for lookup"));
+            }
             return Err(Error::new(ErrorKind::NotFound, "lookup key exceed direct node space"));
         }
         let val = self.root.get_val(index);
@@ -223,14 +223,15 @@ impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
     #[maybe_async::maybe_async]
     async fn lookup_contig(&self, key: &K, maxblocks: usize) -> Result<(V, usize)> {
         let index = (*key).into() as usize;
-        if index > self.root.get_capacity() - 1 {
+        if index >= self.root.get_capacity() {
             return Err(Error::new(ErrorKind::NotFound, "lookup key exceed direct node space"));
         }
         let val = self.root.get_val(index);
         if val.is_invalid() {
             return Err(Error::new(ErrorKind::NotFound, "lookup key not found in direct node"));
         }
-        let max = std::cmp::min(maxblocks, self.root.get_capacity() - 1 - index + 1);
+        // short for std::cmp::min(maxblocks, self.root.get_capacity() - 1 - index + 1)
+        let max = std::cmp::min(maxblocks, self.root.get_capacity() - index);
         let mut count = 1;
         while count < max {
             if self.root.get_val(index + count).is_invalid() {
@@ -244,7 +245,7 @@ impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
     #[maybe_async::maybe_async]
     async fn insert(&self, key: K, val: V) -> Result<()> {
         let index = key.into() as usize;
-        if index > self.root.get_capacity() - 1 {
+        if index >= self.root.get_capacity() {
             return Err(Error::new(ErrorKind::NotFound, "insert key exceed direct node space"));
         }
         if !self.root.get_val(index).is_invalid() {
@@ -259,7 +260,7 @@ impl<'a, K, V, P> VMap<K, V> for DirectMap<'a, K, V, P>
     #[maybe_async::maybe_async]
     async fn insert_or_update(&self, key: K, val: V) -> Result<Option<V>> {
         let index = key.into() as usize;
-        if index > self.root.get_capacity() - 1 {
+        if index >= self.root.get_capacity() {
             return Err(Error::new(ErrorKind::NotFound, "insert key exceed direct node space"));
         }
         let old_val = if !self.root.get_val(index).is_invalid() {

@@ -121,9 +121,13 @@ async fn direct_lookup_level_and_tiny_root() {
 
     // a root so small it has zero capacity for V=u64
     // header is 8 bytes so anything < 16 makes capacity = 0
-    let m2: NullBMap = BMap::new(8, META, NullBlockLoader, NullNodeCache).unwrap();
-    let err = m2.lookup(&0).await.err().unwrap();
-    assert_eq!(err.kind(), ErrorKind::NotFound);
+    let mut m2: NullBMap = BMap::new(8, META, NullBlockLoader, NullNodeCache).unwrap();
+    // Read-side ops on a zero-capacity direct root must cleanly return
+    // NotFound without OOB-reading (previously underflow via
+    // 'capacity - 1' when capacity == 0).
+    assert_eq!(m2.lookup(&0).await.err().unwrap().kind(), ErrorKind::NotFound);
+    assert_eq!(m2.lookup_contig(&0, 8).await.err().unwrap().kind(), ErrorKind::NotFound);
+    assert_eq!(m2.delete(&0).await.err().unwrap().kind(), ErrorKind::NotFound);
 }
 
 #[tokio::test]
