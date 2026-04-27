@@ -681,7 +681,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         right.set_nchild(rnchild);
     }
 
-    pub fn move_left(left: &BtreeNode<K, V, P>, right: &BtreeNode<K, V, P>, n: usize) {
+    pub(crate) fn move_left(left: &BtreeNode<K, V, P>, right: &BtreeNode<K, V, P>, n: usize) {
         if left.is_leaf() && right.is_leaf() {
             Self::do_move_left::<V>(left, right, n);
         } else if !left.is_leaf() && !right.is_leaf() {
@@ -735,7 +735,7 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         right.set_nchild(rnchild);
     }
 
-    pub fn move_right(left: &BtreeNode<K, V, P>, right: &BtreeNode<K, V, P>, n: usize) {
+    pub(crate) fn move_right(left: &BtreeNode<K, V, P>, right: &BtreeNode<K, V, P>, n: usize) {
         if left.is_leaf() && right.is_leaf() {
             Self::do_move_right::<V>(left, right, n);
         } else if !left.is_leaf() && !right.is_leaf() {
