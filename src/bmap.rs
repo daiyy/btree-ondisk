@@ -105,7 +105,9 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         let old_ud = direct.get_userdata();
 
         // create new btree map
-        let mut v = AlignedBuffer::new(data.len()).expect("failed to allocate btree root");
+        let mut v = AlignedBuffer::new(data.len()).ok_or_else(||
+            std::io::Error::new(ErrorKind::InvalidInput,
+                format!("failed to allocate btree root of size {}", data.len())))?;
         // init flags with leaf and large
         v.as_mut_slice()[0] = BTREE_NODE_FLAG_LEAF | BTREE_NODE_FLAG_LARGE;
         let mut btree = BtreeMap {
@@ -209,7 +211,9 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     #[maybe_async::maybe_async]
     async fn convert_to_direct(&mut self, _key: &K, input: &Vec<(K, V)>,
             root_node_size: usize, user_data: u32, last_seq: P, limit: usize, block_loader: L, node_tiered_cache: C) -> Result<()> {
-        let mut v = AlignedBuffer::new(root_node_size).expect("failed to allocate direct root");
+        let mut v = AlignedBuffer::new(root_node_size).ok_or_else(||
+            std::io::Error::new(ErrorKind::InvalidInput,
+                format!("failed to allocate direct root of size {root_node_size}")))?;
         let direct = DirectMap {
             #[cfg(feature = "rc")]
             root: Rc::new(DirectNode::<V>::from_slice(v.as_mut_slice())?),
