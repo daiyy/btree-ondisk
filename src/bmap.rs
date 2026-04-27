@@ -578,7 +578,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         #[cfg(feature = "value-check")]
         if !newid.is_valid_extern_assign() {
             // potiential conflict with seq value internal used
-            panic!("assign value is not in a valid format");
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "assign value is not in a valid format (must carry VALID_EXTERNAL_ASSIGN_MASK)"));
         }
         match &self.inner {
             NodeType::Direct(direct) => {
@@ -617,7 +617,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         #[cfg(feature = "value-check")]
         if !newid.is_valid_extern_assign() {
             // potiential conflict with seq value internal used
-            panic!("assign value is not in a valid format");
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "assign value is not in a valid format (must carry VALID_EXTERNAL_ASSIGN_MASK)"));
         }
         match &self.inner {
             NodeType::Direct(_direct) => {
@@ -642,7 +642,7 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
         #[cfg(feature = "value-check")]
         if !newid.is_valid_extern_assign() {
             // potiential conflict with seq value internal used
-            panic!("assign value is not in a valid format");
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "assign value is not in a valid format (must carry VALID_EXTERNAL_ASSIGN_MASK)"));
         }
         match &self.inner {
             NodeType::Direct(direct) => {
