@@ -423,24 +423,26 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         }
     }
 
+    /// Read a value slot as type `X`.
+    ///
+    /// Not `unsafe fn` because the method is `pub(crate)`: all call sites
+    /// live inside this crate, where `X` is fixed by context (`V` for leaves,
+    /// `P` for internal nodes). Passing any other `X` is UB; never expose
+    /// this outside the crate.
     #[inline]
-    pub fn get_val<X>(&self, index: usize) -> &X {
-        // SAFETY: `X` must match the node type: `X == V` for a leaf node,
-        // `X == P` for an internal node. Mismatched `X` is UB.
-        // `valptr` was computed in `from_raw_ptr` to point at the start of
-        // `capacity` values of the appropriate type; indexing is bounds-checked
-        // by the subsequent slice indexing.
+    pub(crate) fn get_val<X>(&self, index: usize) -> &X {
+        // SAFETY: caller picks X == slot type; valptr spans `capacity`
+        // elements of that type; index is bounds-checked by slice indexing.
         let slice = unsafe {
             std::slice::from_raw_parts(self.valptr as *const X, self.capacity)
         };
         &slice[index]
     }
 
+    /// Write a value slot of type `X`. Same contract as [`Self::get_val`].
     #[inline]
-    pub fn set_val<X>(&self, index: usize, val: &X) {
-        // SAFETY: same `X` requirement as `get_val`. `index` must be < capacity;
-        // the library never calls this with an out-of-bounds index (enforced
-        // by the surrounding insert/split/merge logic).
+    pub(crate) fn set_val<X>(&self, index: usize, val: &X) {
+        // SAFETY: same as `get_val`; index < capacity enforced by callers.
         unsafe {
             let dst = (self.valptr as *mut X).add(index);
             ptr::copy_nonoverlapping(ptr::addr_of!(*val), dst, 1)
@@ -844,7 +846,7 @@ impl<'a, K, V, P> fmt::Display for BtreeNode<'a, K, V, P>
             self.header().flags, self.header().level, self.header().nchildren, self.capacity, self.is_leaf())?;
         for idx in 0..self.header().nchildren.into() {
             if self.is_leaf() {
-                writeln!(f, "{:3}   {:20}   {:20}", idx, self.get_key(idx), self.get_val::<K>(idx))?;
+                writeln!(f, "{:3}   {:20}   {:20}", idx, self.get_key(idx), self.get_val::<V>(idx))?;
             } else {
                 writeln!(f, "{:3}   {:20}   {:20}", idx, self.get_key(idx), self.get_val::<P>(idx))?;
             }
