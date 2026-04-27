@@ -243,13 +243,16 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
 
     /// Construct a read-only view from an immutable slice.
     ///
-    /// SAFETY: The returned node must only be used for read operations
-    /// (e.g. is_large(), get_level(), get_nchild(), get_val()).
-    /// Calling any setter method on it is undefined behavior.
+    /// # Caller contract (not enforced by the type system)
+    ///
+    /// The returned node aliases `buf` via a mutable-looking raw pointer.
+    /// **Only read-only methods** (e.g. `is_large`, `get_level`,
+    /// `get_nchild`, `get_key`, `get_val`) may be called on it. Calling any
+    /// setter (`set_*`, `init*`, `insert`, `delete`, `mark_dirty`,
+    /// `move_*`, `as_u8_mut`, `do_update`, `do_reinit`) is **undefined
+    /// behaviour** because `buf` is not exclusively owned.
     pub fn from_slice_ref(buf: &[u8]) -> Result<Self> {
-        // SAFETY: `buf` is a valid slice. The caller promises to use the
-        // returned node only for reads, so casting to *mut u8 never produces
-        // a write through this pointer.
+        // SAFETY: caller promises read-only use per the contract above.
         unsafe { Self::from_raw_ptr(buf.as_ptr() as *mut u8, buf.len()) }
     }
 
@@ -780,9 +783,23 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         (false, index as usize)
     }
 
-    // insert key val @ index
+    /// Insert `(key, val)` at `index`, shifting later entries right.
+    ///
+    /// # Caller contract (not enforced by the type system)
+    ///
+    /// - `X` must match the node's slot type (`V` for leaves, `P` for
+    ///   internal nodes).
+    /// - `nchild < capacity` (a free slot exists).
+    ///
+    /// Violating either is **undefined behaviour**.
     pub fn insert<X>(&self, index: usize, key: &K, val: &X) {
+        debug_assert_eq!(
+            std::mem::size_of::<X>(),
+            if self.is_leaf() { std::mem::size_of::<V>() } else { std::mem::size_of::<P>() },
+            "insert<X>: X size does not match the node's slot type",
+        );
         let mut nchild = self.get_nchild();
+        debug_assert!(nchild < self.capacity, "insert: node is full");
 
         if index < nchild {
             // SAFETY: shifting `nchild - index` elements from `index` to
@@ -811,9 +828,23 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
         self.set_nchild(nchild);
     }
 
-    // delete key val @ index
+    /// Delete entry at `index`, shifting later entries left.
+    ///
+    /// # Caller contract (not enforced by the type system)
+    ///
+    /// - `X` must match the node's slot type (`V` for leaves, `P` for
+    ///   internal nodes).
+    /// - `index < nchild`.
+    ///
+    /// Violating either is **undefined behaviour**.
     pub fn delete<X: Copy>(&self, index: usize, key: &mut K, val: &mut X) {
+        debug_assert_eq!(
+            std::mem::size_of::<X>(),
+            if self.is_leaf() { std::mem::size_of::<V>() } else { std::mem::size_of::<P>() },
+            "delete<X>: X size does not match the node's slot type",
+        );
         let mut nchild = self.get_nchild();
+        debug_assert!(index < nchild, "delete: index {} >= nchild {}", index, nchild);
 
         *key = *self.get_key(index);
         *val = *self.get_val(index);
@@ -967,10 +998,13 @@ impl<'a, V> DirectNode<'a, V>
 
     /// Construct a read-only view from an immutable slice.
     ///
-    /// SAFETY: The returned node must only be used for read operations.
-    /// Calling any setter method on it is undefined behavior.
+    /// # Caller contract (not enforced by the type system)
+    ///
+    /// Same contract as [`BtreeNode::from_slice_ref`]: only read-only
+    /// methods may be invoked on the returned node. Calling any setter
+    /// is **undefined behaviour**.
     pub fn from_slice_ref(buf: &[u8]) -> Result<Self> {
-        // SAFETY: caller promises read-only usage; see above doc.
+        // SAFETY: caller promises read-only use per the contract above.
         unsafe { Self::from_raw_ptr(buf.as_ptr() as *mut u8, buf.len()) }
     }
 
