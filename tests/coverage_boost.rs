@@ -266,6 +266,15 @@ fn btree_node_new_copy_from_slice() {
     let _ = DirectNode::<u64>::copy_from_slice(&buf).unwrap();
 }
 
+#[test]
+fn btree_node_rejects_zero_capacity() {
+    // 8-byte header leaves 0 bytes for slots — capacity would be 0. Reject.
+    assert!(BtreeNode::<u64, u64, u64>::new(8).is_none());
+    assert!(BtreeNode::<u64, u64, u64>::copy_from_slice(0u64, &[0u8; 8]).is_none());
+    // A full 16-byte pair (K=u64+V=u64) fits at size >= 24.
+    assert!(BtreeNode::<u64, u64, u64>::new(24).is_some());
+}
+
 // --- u64 default BlockLoader impl ---
 
 #[tokio::test]
