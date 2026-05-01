@@ -71,6 +71,56 @@ Everything from `dev` is preserved as-is:
 - `BtreeMap::get_from_nodes` / `do_lookup` untouched. The batch
   variants are completely separate code paths.
 
+## Using the batch API
+
+For readers that currently loop over `lookup`:
+
+```rust
+let mut results = Vec::with_capacity(keys.len());
+for k in &keys {
+    results.push(bmap.lookup(k).await);
+}
+```
+
+replacing the loop with a single call is enough to get the
+parallelised backend fan-out:
+
+```rust
+let results: Vec<Result<V>> = bmap.lookup_batch(&keys).await;
+```
+
+The return type is aligned 1:1 with the input; individual NotFound
+is reported per entry. For an outer failure (allocation / loader
+error that aborts the whole batch) every entry surfaces as `Err`
+with the same kind so the Vec shape is stable regardless of
+outcome.
+
+For a loader that wants to actually benefit, override
+`BlockLoader::read_batch`. A sketch for an async backend:
+
+```rust
+async fn read_batch(
+    &self,
+    ids: &[V],
+    bufs: &mut [Vec<u8>],
+    user_data: u32,
+) -> Result<Vec<(V, Vec<u8>)>> {
+    let futures = ids.iter().zip(bufs.iter_mut()).map(|(id, buf)| {
+        let id = *id;
+        let buf: &mut [u8] = buf.as_mut_slice();
+        async move { self.read(id, buf, user_data).await }
+    });
+    let results = futures::future::join_all(futures).await;
+    let mut more = Vec::new();
+    for r in results { more.extend(r?); }
+    Ok(more)
+}
+```
+
+Loaders that do not override `read_batch` keep working — the
+default implementation simply loops over `read` sequentially, which
+is what was happening before the patch anyway.
+
 ## Design choices worth calling out
 
 ### Why a trait method on `BlockLoader`, not a free function
