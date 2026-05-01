@@ -382,51 +382,43 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         self.block_loader.read(id, buf, self.get_userdata()).await
     }
 
+    /// Hot-path HashMap probe. Kept `#[inline]` and non-async so the common
+    /// cache-hit case stays in the caller's stack frame and does not grow
+    /// the async state machine generated for `get_from_nodes` with the
+    /// full miss path (allocation, two await points, fan-out loop).
+    #[inline]
+    fn try_cached(&self, id: &P) -> Option<BtreeNodeRef<'a, K, V, P>> {
+        self.nodes.borrow().get(id).cloned()
+    }
+
+    /// Slow-path node load. Allocates a fresh `BtreeNode`, consults the
+    /// tiered cache first, then falls back to the backend loader, then
+    /// inserts the result (and any side-loaded neighbours) into
+    /// `self.nodes`.
+    ///
+    /// Deliberately marked `#[cold]` and kept off the hot-path
+    /// `get_from_nodes` call so callers whose lookups hit the in-memory
+    /// map do not pay the cost of building this future's state machine on
+    /// every invocation.
+    #[cold]
     #[maybe_async::maybe_async]
-    pub(crate) async fn get_from_nodes(&self, id: &P) -> Result<BtreeNodeRef<'a, K, V, P>> {
-        {
-            let list = self.nodes.borrow();
-            if let Some(node) = list.get(id) {
-                return Ok(node.clone());
-            }
-            drop(list);
-        }
+    async fn load_and_cache(&self, id: &P) -> Result<BtreeNodeRef<'a, K, V, P>> {
+        let Some(mut node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) else {
+            return Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"));
+        };
 
-        if let Some(mut node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) {
-            // try on tiered cache
-            #[cfg(not(feature = "sync-api"))]
-            let found = self.node_tiered_cache.load(*id, node.as_u8_mut()).await?;
-            #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
-            let found = futures::executor::block_on(async {
-                self.node_tiered_cache.load(*id, node.as_u8_mut()).await
-            })?;
-            #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
-            let found = tokio::runtime::Handle::current().block_on(async {
-                self.node_tiered_cache.load(*id, node.as_u8_mut()).await
-            })?;
-            if found {
-                node.do_update();
-                #[cfg(feature = "rc")]
-                let n = Rc::new(node);
-                #[cfg(feature = "arc")]
-                let n = Arc::new(node);
-                let mut list = self.nodes.borrow_mut();
-                list.insert(*id, n.clone());
-                drop(list);
-                return Ok(n);
-            }
-
-            // try on backend
-            #[cfg(not(feature = "sync-api"))]
-            let more = self.meta_block_loader(*id, node.as_u8_mut()).await?;
-            #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
-            let more = futures::executor::block_on(async {
-                self.meta_block_loader(*id, node.as_u8_mut()).await
-            })?;
-            #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
-            let more = tokio::runtime::Handle::current().block_on(async {
-                self.meta_block_loader(*id, node.as_u8_mut()).await
-            })?;
+        // try on tiered cache
+        #[cfg(not(feature = "sync-api"))]
+        let found = self.node_tiered_cache.load(*id, node.as_u8_mut()).await?;
+        #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
+        let found = futures::executor::block_on(async {
+            self.node_tiered_cache.load(*id, node.as_u8_mut()).await
+        })?;
+        #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
+        let found = tokio::runtime::Handle::current().block_on(async {
+            self.node_tiered_cache.load(*id, node.as_u8_mut()).await
+        })?;
+        if found {
             node.do_update();
             #[cfg(feature = "rc")]
             let n = Rc::new(node);
@@ -435,30 +427,59 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             let mut list = self.nodes.borrow_mut();
             list.insert(*id, n.clone());
             drop(list);
-
-            // if we have more to load
-            for (i, data) in more.into_iter() {
-                assert!(data.len() == self.meta_block_size);
-                if *id == i {
-                    // in case we go duplicated meta block
-                    // skip it
-                    continue;
-                }
-                if let Some(node) = BtreeNode::<K, V, P>::copy_from_slice(i, &data) {
-                    #[cfg(feature = "rc")]
-                    let n = Rc::new(node);
-                    #[cfg(feature = "arc")]
-                    let n = Arc::new(node);
-                    let mut list = self.nodes.borrow_mut();
-                    list.insert(i, n.clone());
-                    drop(list);
-                } else {
-                    return Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"));
-                }
-            }
             return Ok(n);
         }
-        Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"))
+
+        // try on backend
+        #[cfg(not(feature = "sync-api"))]
+        let more = self.meta_block_loader(*id, node.as_u8_mut()).await?;
+        #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
+        let more = futures::executor::block_on(async {
+            self.meta_block_loader(*id, node.as_u8_mut()).await
+        })?;
+        #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
+        let more = tokio::runtime::Handle::current().block_on(async {
+            self.meta_block_loader(*id, node.as_u8_mut()).await
+        })?;
+        node.do_update();
+        #[cfg(feature = "rc")]
+        let n = Rc::new(node);
+        #[cfg(feature = "arc")]
+        let n = Arc::new(node);
+        let mut list = self.nodes.borrow_mut();
+        list.insert(*id, n.clone());
+        drop(list);
+
+        // if we have more to load
+        for (i, data) in more.into_iter() {
+            assert!(data.len() == self.meta_block_size);
+            if *id == i {
+                // in case we go duplicated meta block
+                // skip it
+                continue;
+            }
+            if let Some(node) = BtreeNode::<K, V, P>::copy_from_slice(i, &data) {
+                #[cfg(feature = "rc")]
+                let n = Rc::new(node);
+                #[cfg(feature = "arc")]
+                let n = Arc::new(node);
+                let mut list = self.nodes.borrow_mut();
+                list.insert(i, n.clone());
+                drop(list);
+            } else {
+                return Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"));
+            }
+        }
+        Ok(n)
+    }
+
+    #[inline]
+    #[maybe_async::maybe_async]
+    pub(crate) async fn get_from_nodes(&self, id: &P) -> Result<BtreeNodeRef<'a, K, V, P>> {
+        if let Some(n) = self.try_cached(id) {
+            return Ok(n);
+        }
+        self.load_and_cache(id).await
     }
 
     pub(crate) fn get_new_node(&self, id: &P, level: usize) -> Result<BtreeNodeRef<'a, K, V, P>> {
