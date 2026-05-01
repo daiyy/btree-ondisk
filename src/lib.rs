@@ -75,6 +75,60 @@ pub trait BlockLoader<V> {
     fn read(&self, v: V, buf: &mut [u8], user_data: u32) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>> + Send;
     #[cfg(not(feature = "mt"))]
     fn read(&self, v: V, buf: &mut [u8], user_data: u32) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>>;
+
+    /// Batched read: load `ids[i]` into `bufs[i]` for all `i`, concurrently
+    /// if the implementor supports it. Return value aggregates any
+    /// "side-loaded" neighbours reported by the individual `read` calls.
+    ///
+    /// The default implementation simply loops over `read` sequentially,
+    /// preserving exact back-compat for existing `BlockLoader` impls. To
+    /// get real concurrency, override this method (see
+    /// `MemoryBlockLoader::read_batch` for an example using
+    /// `futures::future::join_all`).
+    ///
+    /// Precondition: `ids.len() == bufs.len()`. Panics otherwise.
+    #[cfg(feature = "mt")]
+    fn read_batch(
+        &self,
+        ids: &[V],
+        bufs: &mut [Vec<u8>],
+        user_data: u32,
+    ) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>> + Send
+    where
+        V: Copy + Send + Sync,
+        Self: Sync,
+    {
+        assert_eq!(ids.len(), bufs.len(), "read_batch: ids and bufs length must match");
+        async move {
+            let mut more: Vec<(V, Vec<u8>)> = Vec::new();
+            for (id, buf) in ids.iter().zip(bufs.iter_mut()) {
+                let m = self.read(*id, buf.as_mut_slice(), user_data).await?;
+                more.extend(m);
+            }
+            Ok(more)
+        }
+    }
+    #[cfg(not(feature = "mt"))]
+    fn read_batch(
+        &self,
+        ids: &[V],
+        bufs: &mut [Vec<u8>],
+        user_data: u32,
+    ) -> impl std::future::Future<Output = Result<Vec<(V, Vec<u8>)>>>
+    where
+        V: Copy,
+    {
+        assert_eq!(ids.len(), bufs.len(), "read_batch: ids and bufs length must match");
+        async move {
+            let mut more: Vec<(V, Vec<u8>)> = Vec::new();
+            for (id, buf) in ids.iter().zip(bufs.iter_mut()) {
+                let m = self.read(*id, buf.as_mut_slice(), user_data).await?;
+                more.extend(m);
+            }
+            Ok(more)
+        }
+    }
+
     fn dup_from_new_path(self, new_path: &str) -> Self;
 }
 
