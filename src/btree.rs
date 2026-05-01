@@ -974,6 +974,20 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
             .collect())
     }
 
+    /// Public (crate-visible) batch lookup entry point, mirroring
+    /// `VMap::lookup` but for `&[K]` input. Returns one
+    /// `Result<V>` per key (NotFound is per-key, not batch-level).
+    /// IO / allocation failures during the batched cache fill
+    /// propagate as the outer `Result::Err`.
+    ///
+    /// Gated out under `mt`; mt callers should fall back to calling
+    /// `lookup` per key.
+    #[cfg(not(feature = "mt"))]
+    #[maybe_async::maybe_async]
+    pub(crate) async fn lookup_batch(&self, keys: &[K], level: usize) -> Result<Vec<Result<V>>> {
+        self.do_lookup_batch(keys, level).await
+    }
+
     #[maybe_async::maybe_async]
     async fn do_lookup_last(&self, path: &BtreePath<'a, K, V, P>) -> Result<K> {
         let mut node = self.get_root_node();

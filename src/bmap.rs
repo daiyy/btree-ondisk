@@ -12,6 +12,8 @@ use atomic_refcell::AtomicRefCell;
 use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
 use std::io::{Result, ErrorKind};
+#[cfg(not(feature = "mt"))]
+use std::io::Error;
 use std::any::Any;
 use crate::VMap;
 use crate::{NodeValue, BlockLoader, NodeCache};
@@ -491,6 +493,71 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     #[maybe_async::maybe_async]
     pub async fn lookup(&self, key: &K) -> Result<V> {
         self.lookup_at_level(key, 1).await
+    }
+
+    /// Batch lookup at a specific tree level.
+    ///
+    /// Resolves every key in `keys` with a single tree walk that
+    /// issues one batched backend IO per tree level (instead of one
+    /// per key per level), cutting cold-lookup wall-clock latency
+    /// on loaders that actually implement
+    /// [`BlockLoader::read_batch`] concurrently.
+    ///
+    /// Returns one `Result<V>` per input key, in the same order:
+    /// `Ok(value)` for a found key, `Err(NotFound)` for a missing
+    /// key. The outer `Result::Err` is only returned for errors
+    /// that abort the entire batch (allocation failure, loader IO
+    /// failure).
+    ///
+    /// Duplicate keys in `keys` are supported and produce the same
+    /// answer as their single-key counterparts.
+    ///
+    /// This API is opt-in and additive. Existing
+    /// [`BMap::lookup`] / [`BMap::lookup_at_level`] are unchanged.
+    ///
+    /// # Feature gating
+    ///
+    /// Compiles out entirely under the `mt` feature. The batched
+    /// path relies on `BlockLoader::read_batch`, which under `mt`
+    /// imposes Send/Sync bounds that would cascade through the
+    /// enclosing `BMap` type parameters. `mt` callers should
+    /// continue to issue per-key `lookup`s.
+    #[cfg(not(feature = "mt"))]
+    #[maybe_async::maybe_async]
+    pub async fn lookup_at_level_batch(&self, keys: &[K], level: usize) -> Vec<Result<V>> {
+        match &self.inner {
+            NodeType::Direct(direct) => {
+                // DirectMap has no multi-node layout, so batching
+                // gains nothing over per-key lookup. Preserve the
+                // exact same semantics.
+                let mut out = Vec::with_capacity(keys.len());
+                for k in keys {
+                    out.push(direct.lookup(k, level).await);
+                }
+                out
+            }
+            NodeType::Btree(btree) => {
+                match btree.lookup_batch(keys, level).await {
+                    Ok(per_key) => per_key,
+                    Err(e) => {
+                        // Outer error: whole-batch failure. Map it
+                        // into one Err entry per key so the API
+                        // stays shape-preserving.
+                        keys.iter()
+                            .map(|_| Err(Error::new(e.kind(), e.to_string())))
+                            .collect()
+                    }
+                }
+            }
+        }
+    }
+
+    /// Batch variant of [`BMap::lookup`]: shorthand for
+    /// `lookup_at_level_batch(keys, 1)`.
+    #[cfg(not(feature = "mt"))]
+    #[maybe_async::maybe_async]
+    pub async fn lookup_batch(&self, keys: &[K]) -> Vec<Result<V>> {
+        self.lookup_at_level_batch(keys, 1).await
     }
 
     /// Lookup max continues key space.
