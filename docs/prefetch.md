@@ -163,7 +163,7 @@ async/sync-api). Additional builds verified for
 4. `48a53fb` — public `BMap::lookup_batch` + `lookup_at_level_batch`.
 5. `08a083a` — `tests/lookup_batch.rs` oracle suite.
 6. `2afa7a0` — `examples/lookup_batch_bench.rs` + `SlowLoader`.
-7. this commit.
+7. `9bfbd10` — this document.
 
 ## Future work (not in this PR)
 
