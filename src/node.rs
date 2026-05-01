@@ -42,6 +42,42 @@ impl AlignedBuffer {
         Some(Self { ptr, size })
     }
 
+    /// Allocate an *uninitialized* buffer of the given size.
+    ///
+    /// This is a pure `alloc` (no `alloc_zeroed`). The returned buffer's
+    /// contents are garbage and must not be read until the caller fully
+    /// overwrites them.
+    ///
+    /// The safe, always-correct alternative is [`AlignedBuffer::new`],
+    /// which zero-fills the whole allocation up front. For a 4 KiB meta
+    /// node that zero-fill is pure overhead whenever the caller is
+    /// about to copy real bytes over it (e.g. tiered-cache load or
+    /// backend loader read in `get_from_nodes`). Use this constructor
+    /// only when such a full overwrite is guaranteed to happen before
+    /// any reader observes the node.
+    ///
+    /// # Safety contract for callers
+    ///
+    /// Before any read through the resulting buffer:
+    ///   * the first `size_of::<NodeHeader>()` bytes must be initialized
+    ///     (otherwise `BtreeNode::from_raw_ptr` will perform a read of
+    ///     uninitialized memory when inspecting `flags`/`nchildren`);
+    ///   * the whole buffer must be overwritten before any reader
+    ///     observes key/value slots (e.g. via
+    ///     `tiered_cache.load(id, as_u8_mut)` or
+    ///     `block_loader.read(id, as_u8_mut, ...)`).
+    pub(crate) fn new_uninit(size: usize) -> Option<Self> {
+        let layout = std::alloc::Layout::from_size_align(size, MIN_ALIGNED).ok()?;
+        // SAFETY: `layout` is non-zero-size when `size > 0`; null return
+        // below covers both allocation failure and a zero-size request
+        // (the latter never happens in practice in this library).
+        let ptr = unsafe { std::alloc::alloc(layout) };
+        if ptr.is_null() {
+            return None;
+        }
+        Some(Self { ptr, size })
+    }
+
     /// Allocate and copy from an existing byte slice. Returns an aligned copy.
     pub fn from_slice_copy(src: &[u8]) -> Self {
         let ab = Self::new(src.len()).expect("failed to allocate aligned buffer");
@@ -274,6 +310,68 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
     pub fn new_with_id(size: usize, id: &P) -> Option<Self> {
         let node = Self::new(size)?;
         node.set_id(*id);
+        Some(node)
+    }
+
+    /// Construct a node whose payload bytes are **uninitialized**.
+    ///
+    /// Intended for the `get_from_nodes` miss path: the caller is about to
+    /// invoke either `tiered_cache.load(id, node.as_u8_mut())` or
+    /// `block_loader.read(id, node.as_u8_mut(), ...)` which fully
+    /// overwrites the buffer, followed by `do_update()` which rebuilds
+    /// `keymap`/`valptr`/`capacity` from the now-authoritative header.
+    ///
+    /// Only the 8-byte `NodeHeader` region is explicitly zeroed here so
+    /// that `from_raw_ptr` — which dereferences `(*header).flags` and
+    /// `(*header).nchildren` to derive the layout — operates on
+    /// initialized memory. The remaining `size - sizeof(NodeHeader)`
+    /// bytes of keymap + valmap are left uninitialized and must not be
+    /// read before the caller overwrites them.
+    ///
+    /// # Why not just zero the whole thing?
+    ///
+    /// The safe, always-correct implementation is to allocate with
+    /// `alloc_zeroed` and let `from_raw_ptr` read zeros:
+    ///
+    /// ```ignore
+    /// pub fn new_with_id(size: usize, id: &P) -> Option<Self> {
+    ///     let node = Self::new(size)?;   // alloc_zeroed under the hood
+    ///     node.set_id(*id);
+    ///     Some(node)
+    /// }
+    /// ```
+    ///
+    /// That form zeroes the entire buffer (4 KiB for typical meta
+    /// nodes) every single miss, even though the next step always
+    /// overwrites the whole thing. This variant skips that work.
+    ///
+    /// # Safety contract
+    ///
+    /// The caller must fully overwrite the keymap + valmap region
+    /// (i.e. everything past `sizeof(NodeHeader)`) **before** any
+    /// other code inspects a key or value slot through this node. In
+    /// practice this means the returned node must be passed directly
+    /// into `tiered_cache.load` or `block_loader.read` and then have
+    /// `do_update()` called on it before being handed out.
+    pub fn new_uninit_with_id(size: usize, id: &P) -> Option<Self> {
+        let ab = AlignedBuffer::new_uninit(size)?;
+        // SAFETY: `ab` is a fresh unique allocation of `size` bytes. Zero
+        // only the NodeHeader-sized prefix so that `from_raw_ptr` reads
+        // initialized bytes while classifying the node (flags/nchildren).
+        // The rest of the buffer stays uninitialized; the caller's
+        // contract (see doc comment) guarantees it will be overwritten
+        // before any read.
+        let hdr_size = std::mem::size_of::<NodeHeader>();
+        debug_assert!(size >= hdr_size);
+        unsafe {
+            std::ptr::write_bytes(ab.ptr, 0u8, hdr_size);
+        }
+
+        // SAFETY: first `hdr_size` bytes were just written; alignment is
+        // MIN_ALIGNED which covers `NodeHeader`'s 8-byte align.
+        let mut node = unsafe { Self::from_raw_ptr(ab.ptr, ab.size).ok()? };
+        node.buf = ab;
+        node.id.set(*id);
         Some(node)
     }
 

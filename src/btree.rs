@@ -400,10 +400,29 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
     /// `get_from_nodes` call so callers whose lookups hit the in-memory
     /// map do not pay the cost of building this future's state machine on
     /// every invocation.
+    ///
+    /// The primary node buffer is allocated via `new_uninit_with_id`
+    /// instead of `new_with_id`. Both the tiered-cache `load` and the
+    /// backend loader `read` paths below fully overwrite the buffer
+    /// before `do_update()` republishes the node, so the zero-fill that
+    /// `new_with_id` would do on every miss is wasted work. See the
+    /// doc comments on `BtreeNode::new_uninit_with_id` and
+    /// `AlignedBuffer::new_uninit` for the safety contract we rely on
+    /// here.
+    ///
+    /// The "more nodes" fan-out below still uses `copy_from_slice`, which
+    /// goes through the zero-filling `AlignedBuffer::new` path because its
+    /// `Vec<u8>` source is typically not a full `meta_block_size` and we
+    /// want zeros behind whatever region isn't copied over.
     #[cold]
     #[maybe_async::maybe_async]
     async fn load_and_cache(&self, id: &P) -> Result<BtreeNodeRef<'a, K, V, P>> {
-        let Some(mut node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) else {
+        // SAFETY: every control-flow path below fully overwrites
+        // `node.as_u8_mut()` (either via `tiered_cache.load` on hit, or
+        // via `meta_block_loader` on the backend path) before `do_update()`
+        // is called or the node is shared via `Rc`/`Arc`. That satisfies
+        // the contract documented on `BtreeNode::new_uninit_with_id`.
+        let Some(mut node) = BtreeNode::<K, V, P>::new_uninit_with_id(self.meta_block_size, id) else {
             return Err(Error::new(ErrorKind::OutOfMemory, "failed to allocate memory for btree node"));
         };
 
