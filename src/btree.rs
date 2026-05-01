@@ -501,6 +501,186 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         self.load_and_cache(id).await
     }
 
+    /// Batched variant of [`get_from_nodes`]: resolves every id in `ids`
+    /// to its `BtreeNodeRef` in a single pass, issuing one batched
+    /// `BlockLoader::read_batch` call for those not already resident.
+    ///
+    /// Duplicate ids in the input are de-duplicated; the result map
+    /// has one entry per unique id. The tiered-cache path is still
+    /// consulted per-id (the `NodeCache` trait does not expose a
+    /// batch method, and in-memory tiered-cache hits are cheap
+    /// compared to backend IO, which is what `read_batch` exists to
+    /// parallelize).
+    ///
+    /// Any "side-loaded" neighbour nodes reported by the loader are
+    /// inserted into `self.nodes` as with `load_and_cache`; they are
+    /// not added to the returned map (the caller asked for `ids`).
+    ///
+    /// Gated out under the `mt` feature. The `read_batch` trait
+    /// method there imposes `V: Send + Sync` and `Self: Sync`, which
+    /// in turn would require `P: Send + Sync` and `L: Sync` on the
+    /// enclosing `BtreeMap` impl. Rather than retrofit those bounds
+    /// onto every existing method (and every downstream user), v1 of
+    /// the batch prefetch path is simply unavailable under `mt`;
+    /// callers fall back to per-key `lookup`. This is an additive
+    /// restriction — nothing regresses.
+    #[allow(dead_code)] // wired up by the lookup_batch path in a later commit
+    #[cfg(not(feature = "mt"))]
+    #[maybe_async::maybe_async]
+    pub(crate) async fn get_from_nodes_batch(
+        &self,
+        ids: &[P],
+    ) -> Result<HashMap<P, BtreeNodeRef<'a, K, V, P>>> {
+        let mut result: HashMap<P, BtreeNodeRef<'a, K, V, P>> = HashMap::new();
+
+        // Dedup inputs while filtering already-resident nodes.
+        let mut miss_ids: Vec<P> = Vec::new();
+        for id in ids {
+            if result.contains_key(id) {
+                continue;
+            }
+            if let Some(n) = self.try_cached(id) {
+                result.insert(*id, n);
+                continue;
+            }
+            miss_ids.push(*id);
+        }
+
+        if miss_ids.is_empty() {
+            return Ok(result);
+        }
+
+        // Allocate one pre-zeroed buffer per miss id. The loader
+        // contract overwrites the whole buffer, but unlike the
+        // single-id path we cannot stack the uninit-header trick
+        // here: read_batch gets Vec<u8>s by reference. A pre-zeroed
+        // Vec of size `meta_block_size` is uniform and cheap enough
+        // at batch sizes users will realistically issue.
+        let mut bufs: Vec<Vec<u8>> = (0..miss_ids.len())
+            .map(|_| vec![0u8; self.meta_block_size])
+            .collect();
+
+        // Separately consult the tiered cache for each miss. Those
+        // that hit can skip the backend call; the remaining indices
+        // are compacted for the batched backend request.
+        let mut tiered_hits: Vec<(P, Vec<u8>)> = Vec::new();
+        let mut backend_idx: Vec<usize> = Vec::new();
+        for (i, id) in miss_ids.iter().enumerate() {
+            let buf = &mut bufs[i];
+            #[cfg(not(feature = "sync-api"))]
+            let hit = self.node_tiered_cache.load(*id, buf.as_mut_slice()).await?;
+            #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
+            let hit = futures::executor::block_on(async {
+                self.node_tiered_cache.load(*id, buf.as_mut_slice()).await
+            })?;
+            #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
+            let hit = tokio::runtime::Handle::current().block_on(async {
+                self.node_tiered_cache.load(*id, buf.as_mut_slice()).await
+            })?;
+            if hit {
+                // Take the buf out so we can reshuffle without
+                // disturbing other indices. Replace with a scratch
+                // buffer so positional indexing stays valid.
+                let mut taken = vec![0u8; self.meta_block_size];
+                std::mem::swap(&mut taken, &mut bufs[i]);
+                tiered_hits.push((*id, taken));
+            } else {
+                backend_idx.push(i);
+            }
+        }
+
+        // Build compact id + buf vectors for the backend call.
+        let backend_ids: Vec<P> = backend_idx.iter().map(|&i| miss_ids[i]).collect();
+        let mut backend_bufs: Vec<Vec<u8>> = backend_idx
+            .iter()
+            .map(|&i| std::mem::take(&mut bufs[i]))
+            .collect();
+
+        let more: Vec<(P, Vec<u8>)> = if backend_ids.is_empty() {
+            Vec::new()
+        } else {
+            #[cfg(not(feature = "sync-api"))]
+            let m = self
+                .block_loader
+                .read_batch(&backend_ids, &mut backend_bufs, self.get_userdata())
+                .await?;
+            #[cfg(all(feature = "sync-api", feature = "futures-runtime"))]
+            let m = futures::executor::block_on(async {
+                self.block_loader
+                    .read_batch(&backend_ids, &mut backend_bufs, self.get_userdata())
+                    .await
+            })?;
+            #[cfg(all(feature = "sync-api", feature = "tokio-runtime"))]
+            let m = tokio::runtime::Handle::current().block_on(async {
+                self.block_loader
+                    .read_batch(&backend_ids, &mut backend_bufs, self.get_userdata())
+                    .await
+            })?;
+            m
+        };
+
+        // Wrap tiered-cache hits into BtreeNodes and publish.
+        for (id, data) in tiered_hits {
+            let Some(node) = BtreeNode::<K, V, P>::copy_from_slice(id, &data) else {
+                return Err(Error::new(
+                    ErrorKind::OutOfMemory,
+                    "failed to allocate memory for btree node",
+                ));
+            };
+            #[cfg(feature = "rc")]
+            let n = Rc::new(node);
+            #[cfg(feature = "arc")]
+            let n = Arc::new(node);
+            self.nodes.borrow_mut().insert(id, n.clone());
+            result.insert(id, n);
+        }
+
+        // Wrap backend reads into BtreeNodes and publish.
+        for (slot_idx, id) in backend_ids.iter().enumerate() {
+            let data = std::mem::take(&mut backend_bufs[slot_idx]);
+            let Some(node) = BtreeNode::<K, V, P>::copy_from_slice(*id, &data) else {
+                return Err(Error::new(
+                    ErrorKind::OutOfMemory,
+                    "failed to allocate memory for btree node",
+                ));
+            };
+            #[cfg(feature = "rc")]
+            let n = Rc::new(node);
+            #[cfg(feature = "arc")]
+            let n = Arc::new(node);
+            self.nodes.borrow_mut().insert(*id, n.clone());
+            result.insert(*id, n);
+        }
+
+        // Any neighbours the loader side-loaded are inserted into
+        // self.nodes so a subsequent lookup for those ids hits the
+        // cache. They are not added to the returned map — the caller
+        // asked for `ids`, not for whatever the loader happened to
+        // return.
+        for (i, data) in more.into_iter() {
+            assert_eq!(data.len(), self.meta_block_size);
+            // skip duplicates and requested ids
+            if result.contains_key(&i) {
+                continue;
+            }
+            if self.try_cached(&i).is_some() {
+                continue;
+            }
+            let Some(node) = BtreeNode::<K, V, P>::copy_from_slice(i, &data) else {
+                return Err(Error::new(
+                    ErrorKind::OutOfMemory,
+                    "failed to allocate memory for btree node",
+                ));
+            };
+            #[cfg(feature = "rc")]
+            let n = Rc::new(node);
+            #[cfg(feature = "arc")]
+            let n = Arc::new(node);
+            self.nodes.borrow_mut().insert(i, n);
+        }
+
+        Ok(result)
+    }
     pub(crate) fn get_new_node(&self, id: &P, level: usize) -> Result<BtreeNodeRef<'a, K, V, P>> {
         let mut list = self.nodes.borrow_mut();
         if let Some(mut node) = BtreeNode::<K, V, P>::new_with_id(self.meta_block_size, id) {
