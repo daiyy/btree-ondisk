@@ -788,6 +788,192 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         Ok((value, next_level_id))
     }
 
+    /// Batch lookup: resolve every key in `keys` starting from level
+    /// `minlevel`. Semantically equivalent to calling `do_lookup`
+    /// once per key, but every below-root tree level is walked via a
+    /// single `get_from_nodes_batch` call so the backend IO for all
+    /// keys at that level fans out together.
+    ///
+    /// Returns a `Vec<Result<V>>` aligned with `keys`: each entry is
+    /// `Ok(value)` or `Err(NotFound)`; any other IO / allocation
+    /// error from the backend aborts the whole batch (propagated as
+    /// the outer `Result::Err`).
+    ///
+    /// Gated out under `mt` for the same reason as
+    /// `get_from_nodes_batch` (the read_batch Send/Sync bounds would
+    /// ripple).
+    #[allow(dead_code)] // wired up by pub lookup_batch in the next commit
+    #[cfg(not(feature = "mt"))]
+    #[maybe_async::maybe_async]
+    async fn do_lookup_batch(&self, keys: &[K], minlevel: usize) -> Result<Vec<Result<V>>> {
+        // Per-key state carried through the level walk.
+        struct KeyState<K, V, P> {
+            key: K,
+            found: bool,
+            index: usize,
+            next_level_id: P,
+            value: V,
+            /// Output slot: Some once the key's fate is decided
+            /// (either a value found at a leaf, or NotFound). Also
+            /// acts as the "skip this key in further levels" flag.
+            outcome: Option<Result<V>>,
+        }
+
+        let root = self.get_root_node();
+        let root_level = root.get_level();
+        if root_level < minlevel || root.get_nchild() == 0 {
+            // Same diagnostic as do_lookup; but apply to every key.
+            return Ok(keys
+                .iter()
+                .map(|_| Err(Error::new(
+                    ErrorKind::NotFound,
+                    "btree root node not eligible for lookup",
+                )))
+                .collect());
+        }
+
+        // Initialize per-key state by probing the root.
+        let mut state: Vec<KeyState<K, V, P>> = keys
+            .iter()
+            .map(|key| {
+                let (found, index) = root.lookup(key);
+                let mut s = KeyState {
+                    key: *key,
+                    found,
+                    index,
+                    next_level_id: P::invalid_value(),
+                    value: V::invalid_value(),
+                    outcome: None,
+                };
+                if index > root.get_capacity() - 1 {
+                    // next_level_id stays invalid; this key will
+                    // fail below.
+                } else if root_level == BTREE_NODE_LEVEL_MIN {
+                    // Root is itself the leaf.
+                    s.value = *root.get_val::<V>(index);
+                } else {
+                    s.next_level_id = *root.get_val::<P>(index);
+                }
+                s
+            })
+            .collect();
+
+        // If root is the leaf, finalize and return.
+        if root_level == BTREE_NODE_LEVEL_MIN {
+            return Ok(state
+                .into_iter()
+                .map(|s| if s.found {
+                    Ok(s.value)
+                } else {
+                    Err(Error::new(ErrorKind::NotFound, "key not found through btree node lookup"))
+                })
+                .collect());
+        }
+
+        // Descend level-by-level.
+        let mut level = root_level - 1;
+        while level >= minlevel {
+            // Collect unique next_level_ids for all still-active keys.
+            let mut batch_ids: Vec<P> = Vec::new();
+            {
+                let mut seen: std::collections::HashSet<P> = std::collections::HashSet::new();
+                for s in &state {
+                    if s.outcome.is_some() {
+                        continue;
+                    }
+                    if s.next_level_id.is_invalid() {
+                        continue;
+                    }
+                    if seen.insert(s.next_level_id) {
+                        batch_ids.push(s.next_level_id);
+                    }
+                }
+            }
+
+            // One batched cache-fill for the whole level.
+            let nodes_map = if batch_ids.is_empty() {
+                std::collections::HashMap::new()
+            } else {
+                self.get_from_nodes_batch(&batch_ids).await?
+            };
+
+            // Per-key update at this level.
+            for s in &mut state {
+                if s.outcome.is_some() {
+                    continue;
+                }
+                if s.next_level_id.is_invalid() {
+                    // No child id to consult. This mirrors do_lookup's
+                    // behaviour when the root's lookup returned an
+                    // out-of-capacity index.
+                    s.outcome = Some(Err(Error::new(
+                        ErrorKind::NotFound,
+                        "key not found through btree node lookup",
+                    )));
+                    continue;
+                }
+                let node = nodes_map
+                    .get(&s.next_level_id)
+                    .expect("get_from_nodes_batch missed requested id");
+
+                if !s.found {
+                    let (f, i) = node.lookup(&s.key);
+                    s.found = f;
+                    s.index = i;
+                } else {
+                    s.index = 0;
+                }
+
+                if node.is_leaf() {
+                    if s.index < node.get_capacity() {
+                        s.value = *node.get_val::<V>(s.index);
+                    } else {
+                        if s.found || level != BTREE_NODE_LEVEL_MIN {
+                            warn!(
+                                "batch lookup: index {} - level {} - found {}",
+                                s.index, level, s.found
+                            );
+                        }
+                        s.value = V::invalid_value();
+                    }
+                } else if s.index < node.get_capacity() {
+                    s.next_level_id = *node.get_val::<P>(s.index);
+                } else {
+                    if s.found || level != BTREE_NODE_LEVEL_MIN {
+                        warn!(
+                            "batch lookup: index {} - level {} - found {}",
+                            s.index, level, s.found
+                        );
+                    }
+                    s.next_level_id = P::invalid_value();
+                }
+            }
+
+            if level == minlevel {
+                break;
+            }
+            level -= 1;
+        }
+
+        // Finalize.
+        Ok(state
+            .into_iter()
+            .map(|s| {
+                if let Some(o) = s.outcome {
+                    return o;
+                }
+                if s.found {
+                    Ok(s.value)
+                } else {
+                    Err(Error::new(
+                        ErrorKind::NotFound,
+                        "key not found through btree node lookup",
+                    ))
+                }
+            })
+            .collect())
+    }
+
     #[maybe_async::maybe_async]
     async fn do_lookup_last(&self, path: &BtreePath<'a, K, V, P>) -> Result<K> {
         let mut node = self.get_root_node();
