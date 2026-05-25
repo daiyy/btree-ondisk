@@ -192,9 +192,15 @@ mod simd_avx2 {
         let (v_reg, lanes_valid) = if need_pad {
             let mut buf = [u64::MAX; 4];
             let tail = nchildren - base;
-            for i in 0..tail {
-                buf[i] = *keys.get_unchecked(base + i);
-            }
+            // Fill `buf[..tail]` with `keys[base..base+tail]`. Already
+            // inside an `unsafe fn` block; copy_nonoverlapping is the
+            // direct equivalent of the previous explicit loop and lets
+            // clippy stop nagging about needless_range_loop.
+            std::ptr::copy_nonoverlapping(
+                keys.as_ptr().add(base),
+                buf.as_mut_ptr(),
+                tail,
+            );
             (_mm256_loadu_si256(buf.as_ptr() as *const __m256i), tail)
         } else {
             let p = keys.as_ptr().add(base) as *const __m256i;
@@ -547,10 +553,8 @@ fn run_one(node_size: usize, iters: u64, has_avx2: bool) {
         .expect("BtreeNode::new");
     node.set_leaf();
     let keys_vec = build_keys(cap);
-    for i in 0..cap {
-        let k = keys_vec[i];
-        let v = k;
-        node.insert(i, &k, &v);
+    for (i, &k) in keys_vec.iter().enumerate() {
+        node.insert(i, &k, &k);
     }
 
     // Sanity: classic via the node's own lookup method must agree with our

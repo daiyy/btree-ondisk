@@ -100,10 +100,6 @@ impl<'a> Fixture<'a> {
             seqs.push_back(blk_ptr);
             self.seq += 1;
         }
-        for _blk_idx in 0..0u64 {
-            // no data block assignment needed for lookup-only bench; we
-            // only care about meta nodes being persisted.
-        }
         for n in &dirty_meta_vec {
             let s = seqs.pop_front().expect("seq");
             self.loader.write(s, n.as_slice());
