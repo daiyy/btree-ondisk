@@ -63,6 +63,23 @@ after its signature was changed to return `Result` (see finding 6).
    `pub fn read(...) -> Result<Self, io::Error>`; the parser's error
    is propagated instead. Verified against the recorded fuzz artifacts
    and a 14M-iteration fuzz run.
+7. **`do_lookup_batch` short-circuited on invalid id** — the
+   batch lookup walker treated `next_level_id == invalid_value()`
+   as an unconditional NotFound. The single-key `do_lookup` does
+   not do that — it dispatches to `get_from_nodes(&id)` regardless
+   and lets the cache (which can legitimately hold an entry whose
+   id equals `invalid_value()`, see `BMap::convert_and_insert`
+   that uses `last_seq=0` as the first leaf id during direct →
+   btree promotion) resolve it. The asymmetric short-circuit
+   caused `lookup_batch` to return `NotFound` for keys
+   `lookup` would resolve normally. Fixed by removing the
+   `is_invalid()` skip from both id-collection and the per-key
+   step; behaviour is now identical to `do_lookup`. Found by the
+   new `bmap_lookup_batch` fuzz target on its first 30-second
+   run; regression test added at
+   `tests/lookup_batch.rs::lookup_batch_resolves_invalid_first_leaf_id`
+   and a regression seed at
+   `fuzz/seeds/bmap_lookup_batch/regression_invalid_first_leaf_id`.
 
 ## Open findings
 
@@ -72,3 +89,6 @@ _None tracked in this audit round._
 
 - `btree_node_from_slice`: ~7M iterations, no ASan / panic findings.
 - `direct_node_from_slice`: ~4M iterations, no findings.
+- `bmap_lookup_batch`: 215k iterations after the finding-7 fix,
+  no further crashes; 30-second `fuzz-quick` run clean across
+  all five targets.

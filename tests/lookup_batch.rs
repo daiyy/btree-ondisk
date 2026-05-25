@@ -161,3 +161,38 @@ async fn lookup_batch_on_direct_map_still_works() {
     assert_eq!(batch[1].as_ref().ok().copied(), Some(202));
     assert!(batch[2].is_err()); // key 3 not inserted
 }
+
+/// Regression for a fuzz finding (`bmap_lookup_batch` /
+/// crash-42d55cc3...): lookup_batch returned NotFound for a key
+/// that lookup() found and the BTreeMap oracle held.
+///
+/// Root cause: `BMap::convert_and_insert` initialises its very
+/// first leaf with `last_seq=0`, which equals
+/// `NodeValue::invalid_value()` for `u64`. The single-key
+/// `do_lookup` ignores that invalidness and still resolves the
+/// child via the in-memory cache; the original
+/// `do_lookup_batch` short-circuited on `is_invalid()` and
+/// reported NotFound.
+///
+/// Fix: align `do_lookup_batch` with `do_lookup` and let the
+/// cache / loader resolve the id without a special invalid
+/// short-circuit.
+#[tokio::test]
+async fn lookup_batch_resolves_invalid_first_leaf_id() {
+    use btree_ondisk::bmap::BMap;
+    use btree_ondisk::{NullBlockLoader, NullNodeCache};
+
+    let mut m: BMap<u64, u64, u64, NullBlockLoader, NullNodeCache> =
+        BMap::new(56, 256, NullBlockLoader, NullNodeCache).unwrap();
+    // Reproduces the convert_and_insert-then-batch-lookup window.
+    m.insert(5, 5).await.unwrap();
+    m.insert(2, 2).await.unwrap();
+    m.insert(1, 1).await.unwrap();
+    m.insert(383, 383).await.unwrap();
+
+    let batch = m.lookup_batch(&[5]).await;
+    assert_eq!(batch.len(), 1);
+    assert_eq!(*batch[0].as_ref().unwrap(), 5);
+    let single = m.lookup(&5).await.unwrap();
+    assert_eq!(single, 5);
+}

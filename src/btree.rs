@@ -883,9 +883,18 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
                     if s.outcome.is_some() {
                         continue;
                     }
-                    if s.next_level_id.is_invalid() {
-                        continue;
-                    }
+                    // We deliberately do NOT skip ids whose value
+                    // happens to equal `P::invalid_value()`. The
+                    // single-key `do_lookup` does not skip them
+                    // either: it calls `get_from_nodes(&id)`
+                    // unconditionally and relies on the cache /
+                    // loader to either resolve or fail. The
+                    // BMap conversion path can legitimately produce
+                    // a leaf whose first id equals
+                    // invalid_value (see the convert_and_insert
+                    // path that uses last_seq=0 as the first leaf
+                    // id), so short-circuiting here would diverge
+                    // from `do_lookup` and miss real values.
                     if seen.insert(s.next_level_id) {
                         batch_ids.push(s.next_level_id);
                     }
@@ -904,16 +913,10 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
                 if s.outcome.is_some() {
                     continue;
                 }
-                if s.next_level_id.is_invalid() {
-                    // No child id to consult. This mirrors do_lookup's
-                    // behaviour when the root's lookup returned an
-                    // out-of-capacity index.
-                    s.outcome = Some(Err(Error::new(
-                        ErrorKind::NotFound,
-                        "key not found through btree node lookup",
-                    )));
-                    continue;
-                }
+                // Note: `do_lookup` does not short-circuit on an
+                // invalid `next_level_id` here, and neither do we.
+                // See the comment in the id-collection loop above
+                // for the reasoning.
                 let node = nodes_map
                     .get(&s.next_level_id)
                     .expect("get_from_nodes_batch missed requested id");

@@ -47,3 +47,10 @@ path = "fuzz_targets/bmap_ops.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bmap_lookup_batch"
+path = "fuzz_targets/bmap_lookup_batch.rs"
+test = false
+doc = false
+bench = false

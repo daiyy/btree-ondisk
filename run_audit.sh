@@ -58,7 +58,7 @@ fuzz_run() {
     if [[ "$feat" == "arc" ]]; then
         flags=(--no-default-features --features arc)
     fi
-    for t in btree_node_from_slice direct_node_from_slice bmap_read bmap_ops; do
+    for t in btree_node_from_slice direct_node_from_slice bmap_read bmap_ops bmap_lookup_batch; do
         echo "=== fuzz $t ($feat, ${secs}s) ==="
         cargo +nightly fuzz run "${flags[@]}" "$t" -- -max_total_time="$secs" || return 1
     done
