@@ -273,4 +273,69 @@ async fn main() {
             batch_ids
         );
     }
+
+    // ----------------------------------------------------------------
+    // lookup_contig sibling-prefetch section
+    // ----------------------------------------------------------------
+    //
+    // When `lookup_contig(key, N)` spans more than one leaf, the path
+    // walk needs to load the right-sibling leaves under the current
+    // parent. Without prefetching that's `(L - 1)` serial loader calls
+    // where L is the number of leaves involved. With sibling
+    // prefetching (the patched code path), one `read_batch` is issued
+    // up front for all needed sibling ids before the walk begins.
+    //
+    // We exercise this by running `lookup_contig(0, run_length)` for a
+    // few growing run lengths against the same SlowLoader fixture.
+    // Reads the loader records reveal whether the walk hit the cache
+    // (one `batches=1` row) or had to issue serial reads.
+    let contig_lengths: Vec<usize> = env::var("CONTIG_LENGTHS")
+        .ok()
+        .map(|s| {
+            s.split(',')
+                .filter_map(|x| x.trim().parse::<usize>().ok())
+                .collect::<Vec<_>>()
+        })
+        .filter(|v: &Vec<usize>| !v.is_empty())
+        .unwrap_or_else(|| vec![1, 64, 256, 1024, 2048]);
+
+    println!();
+    println!("# lookup_contig with sibling prefetch:");
+    println!(
+        "| {:>11} | {:>14} | {:>10} | {:>10} | {:>10} | {:>10} |",
+        "run_length", "contig (ms)", "got", "reads", "batches", "batch_ids"
+    );
+    println!(
+        "|{:-<13}|{:-<16}|{:-<12}|{:-<12}|{:-<12}|{:-<12}|",
+        "", "", "", "", "", ""
+    );
+    for &n in &contig_lengths {
+        // Warmup
+        bmap.set_cache_limit(1);
+        let _ = bmap.lookup_contig(&0u64, n).await;
+
+        let mut samples = Vec::with_capacity(iters);
+        loader.reset_counters();
+        let mut got = 0usize;
+        for _ in 0..iters {
+            bmap.set_cache_limit(1); // force cold for every sample
+            let t0 = Instant::now();
+            let r = bmap.lookup_contig(&0u64, n).await;
+            samples.push(t0.elapsed());
+            if let Ok((_, c)) = r {
+                got = c;
+            }
+        }
+        let (reads, batch_calls, batch_ids) = loader.snapshot();
+        let med = median(samples);
+        println!(
+            "| {:>11} | {:>14.3} | {:>10} | {:>10} | {:>10} | {:>10} |",
+            n,
+            med.as_secs_f64() * 1e3,
+            got,
+            reads,
+            batch_calls,
+            batch_ids
+        );
+    }
 }
