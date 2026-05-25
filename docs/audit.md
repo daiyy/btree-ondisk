@@ -90,5 +90,11 @@ _None tracked in this audit round._
 - `btree_node_from_slice`: ~7M iterations, no ASan / panic findings.
 - `direct_node_from_slice`: ~4M iterations, no findings.
 - `bmap_lookup_batch`: 215k iterations after the finding-7 fix,
-  no further crashes; 30-second `fuzz-quick` run clean across
-  all five targets.
+  no further crashes.
+- 30-second `fuzz-quick` (rc) clean across all five targets.
+- 30-second `fuzz-arc` clean across all five targets:
+    - btree_node_from_slice 6.7M iter,
+    - direct_node_from_slice 8.3M iter,
+    - bmap_read 11.5M iter,
+    - bmap_ops 37k iter,
+    - bmap_lookup_batch 143k iter.
