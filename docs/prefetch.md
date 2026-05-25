@@ -47,6 +47,11 @@ in parallel. Across a whole batch, the critical path shrinks from
   current parent as the requested run length might still need. The
   walk that follows hits the cache instead of issuing serial loader
   reads. Best-effort; semantics unchanged.
+- `MaybeSendSync` / `MaybeSync` marker traits in `src/lib.rs` plus
+  method-level `where` clauses on every batch entry point. Lets the
+  public batch API compile and run under the `mt` feature without
+  duplicating the `BtreeMap` impl block or sprinkling
+  `#[cfg(feature = "mt")]` across every where-clause.
 
 ### What this prototype does NOT address (deliberate non-goals)
 
@@ -149,17 +154,51 @@ per-key results in a single flat `Vec` and reserving the outer
 `Result::Err` for "the whole batch failed" (allocation failure,
 backend IO error) keeps the common case straightforward.
 
-### Why `mt` is left out
+### How the `mt` feature is handled
 
-The `mt` feature adds `+ Send` bounds to the loader's futures to
-ensure they can travel across executor threads. Those bounds cascade
-into `V: Send + Sync`, `Self: Sync`, and several others on every
-method that calls `read_batch`. Retrofitting the full `BtreeMap`
-impl with those bounds would touch every downstream user of the
-library. v1 therefore gates the batch path out under `mt` and
-documents it — callers fall back to per-key `lookup`. This is
-additive (nothing that used to work stops working) and the
-restriction can be lifted later if the demand appears.
+The `mt` feature adds `+ Send` bounds to the loader's futures so
+they can travel across executor threads. Those bounds cascade into
+`V: Send + Sync` and `Self: Sync` on every method that calls
+`read_batch`.
+
+The library encodes that conditional requirement with two private
+marker traits in `src/lib.rs`:
+
+```rust
+#[cfg(feature = "mt")]
+pub trait MaybeSendSync: Send + Sync {}
+#[cfg(feature = "mt")]
+impl<T: Send + Sync> MaybeSendSync for T {}
+
+#[cfg(not(feature = "mt"))]
+pub trait MaybeSendSync {}
+#[cfg(not(feature = "mt"))]
+impl<T> MaybeSendSync for T {}
+
+// (analogous MaybeSync : Sync)
+```
+
+Method-level `where` clauses on the batch entry points
+(`BMap::lookup_batch`, `lookup_at_level_batch`,
+`BtreeMap::get_from_nodes_batch`, `do_lookup_batch`,
+`BtreeMap::lookup_batch`) write `where P: MaybeSendSync, L: MaybeSync`.
+Under non-mt those bounds are blanket-true, so users see no extra
+constraint. Under mt they expand to the actual `Send + Sync` /
+`Sync` requirements that real mt users would already have to
+satisfy on their `P` and `L` types.
+
+This avoids both a) sprinkling `#[cfg(feature = "mt")]` on every
+where-clause (attributes-in-where is unstable) and b) duplicating
+the entire `BtreeMap` impl block per feature.
+
+The `lookup_contig` sibling-prefetch path (commit `bc39039`) is
+the one piece of the prefetch work that *remains* gated out under
+`mt`: its prefetch lives inside a `VMap` trait method body, and
+trait impls cannot add their own where clauses. Forcing the
+markers onto the VMap impl block would ripple `Send + Sync` bounds
+onto every `BMap` method that delegates into VMap (`lookup`,
+`insert`, `delete`, `lookup_contig` itself, ...). mt callers of
+`lookup_contig` fall back to the original non-prefetched walk.
 
 ### Why `MemoryBlockLoader::read_batch` is not overridden
 
@@ -237,9 +276,15 @@ temporarily reverting commit `bc39039` and re-running the bench.
 ### Feature matrix
 
 `run_tests.sh` passes on all four existing configurations (rc/arc ×
-async/sync-api). Additional builds verified for
-`arc + tokio-runtime + mt` (the batch API and `lookup_contig`
-prefetch are both gated out there).
+async/sync-api). Additionally verified under
+`arc + tokio-runtime + mt`:
+
+  * the public batch API (`BMap::lookup_batch`,
+    `lookup_at_level_batch`) compiles and the `lookup_batch`
+    oracle test (3 cases) passes;
+  * the `lookup_contig` sibling prefetch is the one piece still
+    gated out under mt — see "How the `mt` feature is handled"
+    above.
 
 ## Commits
 
@@ -254,13 +299,23 @@ prefetch are both gated out there).
 8. `bc39039` — sibling-leaf prefetch in `lookup_contig`.
 9. `a323c66` — extend `lookup_batch_bench` with `lookup_contig`
    measurements.
+10. `1fd8dd5` — document `lookup_contig` sibling prefetch.
+11. `cef98a0` — `MaybeSendSync` / `MaybeSync` marker traits;
+    enable `lookup_batch` / `lookup_at_level_batch` under the `mt`
+    feature.
 
 ## Future work (not in this PR)
 
 - Wiring `read_batch` on a real backend loader (e.g. an S3 or
   local-file loader) and re-running the bench against actual RTT.
-- Lifting the `mt`-feature restriction, once the Send/Sync
-  retrofit work is justified by a concrete need.
+- `lookup_contig` sibling prefetch under the `mt` feature. The
+  batch entry points (`lookup_batch`, `lookup_at_level_batch`)
+  already work under mt thanks to the `MaybeSendSync` /
+  `MaybeSync` markers; the `lookup_contig` prefetch path remains
+  gated out because lifting it requires bounds on the `VMap`
+  trait impl that would ripple to every BMap method delegating
+  into VMap. Acceptable for v1; revisit if a profile shows mt
+  `lookup_contig` as a bottleneck.
 - Range/scan prefetch beyond the current parent's sibling window.
   v1 only prefetches sibling leaves under the same parent in
   `lookup_contig`. The walk loop itself returns at the parent
