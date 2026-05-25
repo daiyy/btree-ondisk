@@ -16,6 +16,7 @@ use crate::node::*;
 use crate::VMap;
 use crate::bmap::BMapStat;
 use crate::{NodeValue, BlockLoader, NodeCache};
+use crate::{MaybeSendSync, MaybeSync};
 use crate::DEFAULT_CACHE_UNLIMITED;
 
 pub(crate) type BtreeLevel = usize;
@@ -516,21 +517,20 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
     /// inserted into `self.nodes` as with `load_and_cache`; they are
     /// not added to the returned map (the caller asked for `ids`).
     ///
-    /// Gated out under the `mt` feature. The `read_batch` trait
-    /// method there imposes `V: Send + Sync` and `Self: Sync`, which
-    /// in turn would require `P: Send + Sync` and `L: Sync` on the
-    /// enclosing `BtreeMap` impl. Rather than retrofit those bounds
-    /// onto every existing method (and every downstream user), v1 of
-    /// the batch prefetch path is simply unavailable under `mt`;
-    /// callers fall back to per-key `lookup`. This is an additive
-    /// restriction — nothing regresses.
-    #[allow(dead_code)] // wired up by the lookup_batch path in a later commit
-    #[cfg(not(feature = "mt"))]
+    /// Under the `mt` feature `read_batch` requires `V: Send + Sync`
+    /// and `Self: Sync`. The `MaybeSendSync` / `MaybeSync` marker
+    /// traits encode that conditional bound: under non-mt they are
+    /// blanket-implemented and impose no real constraint, under mt
+    /// they expand to `Send + Sync` / `Sync`.
     #[maybe_async::maybe_async]
     pub(crate) async fn get_from_nodes_batch(
         &self,
         ids: &[P],
-    ) -> Result<HashMap<P, BtreeNodeRef<'a, K, V, P>>> {
+    ) -> Result<HashMap<P, BtreeNodeRef<'a, K, V, P>>>
+    where
+        P: MaybeSendSync,
+        L: MaybeSync,
+    {
         let mut result: HashMap<P, BtreeNodeRef<'a, K, V, P>> = HashMap::new();
 
         // Dedup inputs while filtering already-resident nodes.
@@ -799,13 +799,15 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
     /// error from the backend aborts the whole batch (propagated as
     /// the outer `Result::Err`).
     ///
-    /// Gated out under `mt` for the same reason as
-    /// `get_from_nodes_batch` (the read_batch Send/Sync bounds would
-    /// ripple).
-    #[allow(dead_code)] // wired up by pub lookup_batch in the next commit
-    #[cfg(not(feature = "mt"))]
+    /// The `MaybeSendSync` / `MaybeSync` bounds are conditional
+    /// markers that compile to nothing under non-`mt` and to the
+    /// equivalent `Send + Sync` / `Sync` bound under `mt`.
     #[maybe_async::maybe_async]
-    async fn do_lookup_batch(&self, keys: &[K], minlevel: usize) -> Result<Vec<Result<V>>> {
+    async fn do_lookup_batch(&self, keys: &[K], minlevel: usize) -> Result<Vec<Result<V>>>
+    where
+        P: MaybeSendSync,
+        L: MaybeSync,
+    {
         // Per-key state carried through the level walk.
         struct KeyState<K, V, P> {
             key: K,
@@ -980,11 +982,14 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
     /// IO / allocation failures during the batched cache fill
     /// propagate as the outer `Result::Err`.
     ///
-    /// Gated out under `mt`; mt callers should fall back to calling
-    /// `lookup` per key.
-    #[cfg(not(feature = "mt"))]
+    /// `MaybeSendSync` / `MaybeSync` bounds are conditional markers;
+    /// see the trait docs.
     #[maybe_async::maybe_async]
-    pub(crate) async fn lookup_batch(&self, keys: &[K], level: usize) -> Result<Vec<Result<V>>> {
+    pub(crate) async fn lookup_batch(&self, keys: &[K], level: usize) -> Result<Vec<Result<V>>>
+    where
+        P: MaybeSendSync,
+        L: MaybeSync,
+    {
         self.do_lookup_batch(keys, level).await
     }
 
@@ -1931,6 +1936,14 @@ impl<'a, K, V, P, L, C> VMap<K, V> for BtreeMap<'a, K, V, P, L, C>
         // observable behaviour of `lookup_contig` is identical to the
         // un-prefetched path. If prefetch did fail to populate the
         // cache, the loop below will hit the loader on its own.
+        //
+        // Gated out under `mt`: lifting this gate would force
+        // `P: Send + Sync, L: Sync` onto the whole VMap trait impl,
+        // which in turn would ripple to every BMap method that
+        // delegates into VMap. The batch-only entry points
+        // (`BMap::lookup_batch` / `lookup_at_level_batch`) carry the
+        // same requirement on their own method-level where-clause,
+        // which contains the ripple to the batch path only.
         #[cfg(not(feature = "mt"))]
         {
             if level < maxlevel {

@@ -11,12 +11,11 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use atomic_refcell::AtomicRefCell;
 use std::collections::{HashMap, VecDeque};
 use std::marker::PhantomData;
-use std::io::{Result, ErrorKind};
-#[cfg(not(feature = "mt"))]
-use std::io::Error;
+use std::io::{Result, Error, ErrorKind};
 use std::any::Any;
 use crate::VMap;
 use crate::{NodeValue, BlockLoader, NodeCache};
+use crate::{MaybeSendSync, MaybeSync};
 use crate::direct::DirectMap;
 use crate::btree::BtreeMap;
 use crate::node::{
@@ -517,14 +516,18 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
     ///
     /// # Feature gating
     ///
-    /// Compiles out entirely under the `mt` feature. The batched
-    /// path relies on `BlockLoader::read_batch`, which under `mt`
-    /// imposes Send/Sync bounds that would cascade through the
-    /// enclosing `BMap` type parameters. `mt` callers should
-    /// continue to issue per-key `lookup`s.
-    #[cfg(not(feature = "mt"))]
+    /// Available under all feature sets, including `mt`. The
+    /// `MaybeSendSync` / `MaybeSync` markers on this method's
+    /// where-clause expand to nothing under non-mt and to the
+    /// `Send + Sync` / `Sync` bounds that `BlockLoader::read_batch`
+    /// requires under `mt`. Real mt users typically already satisfy
+    /// those bounds on their `P` and `L` types.
     #[maybe_async::maybe_async]
-    pub async fn lookup_at_level_batch(&self, keys: &[K], level: usize) -> Vec<Result<V>> {
+    pub async fn lookup_at_level_batch(&self, keys: &[K], level: usize) -> Vec<Result<V>>
+    where
+        P: MaybeSendSync,
+        L: MaybeSync,
+    {
         match &self.inner {
             NodeType::Direct(direct) => {
                 // DirectMap has no multi-node layout, so batching
@@ -554,9 +557,12 @@ impl<'a, K, V, P, L, C> BMap<'a, K, V, P, L, C>
 
     /// Batch variant of [`BMap::lookup`]: shorthand for
     /// `lookup_at_level_batch(keys, 1)`.
-    #[cfg(not(feature = "mt"))]
     #[maybe_async::maybe_async]
-    pub async fn lookup_batch(&self, keys: &[K]) -> Vec<Result<V>> {
+    pub async fn lookup_batch(&self, keys: &[K]) -> Vec<Result<V>>
+    where
+        P: MaybeSendSync,
+        L: MaybeSync,
+    {
         self.lookup_at_level_batch(keys, 1).await
     }
 

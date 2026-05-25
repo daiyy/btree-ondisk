@@ -69,6 +69,56 @@ pub trait NodeValue {
     fn is_valid_extern_assign(&self) -> bool;
 }
 
+// --- mt-feature conditional bound markers -----------------------------
+//
+// `BlockLoader::read_batch` requires `V: Send + Sync` and `Self: Sync`
+// under the `mt` feature so its returned future is `Send`. Methods that
+// invoke `read_batch` therefore need to surface those requirements
+// onto whatever type carries the loader (typically `BtreeMap<...>`).
+// Doing so by hand with `#[cfg(feature = "mt")]` on every `where`
+// clause is unstable (attributes-in-where is feature-gated). Two
+// marker traits below provide the same effect via blanket impls that
+// flip with the feature flag:
+//
+//   * Under `mt`:    `MaybeSendSync` ⇔ `Send + Sync`,
+//                    `MaybeSync`     ⇔ `Sync`.
+//   * Under non-mt:  both are blanket-implemented for every type,
+//                    so they impose no real bound.
+//
+// Methods that touch `read_batch` write a single `where T: MaybeSync`
+// (or `MaybeSendSync`) clause; the actual bound expands per feature.
+// The traits are `pub(crate)` so they don't leak into the public API,
+// and `#[doc(hidden)]` so re-exports through inner items don't surface
+// them in rustdoc.
+
+#[doc(hidden)]
+#[cfg(feature = "mt")]
+pub trait MaybeSendSync: Send + Sync {}
+#[doc(hidden)]
+#[cfg(feature = "mt")]
+impl<T: Send + Sync> MaybeSendSync for T {}
+
+#[doc(hidden)]
+#[cfg(not(feature = "mt"))]
+pub trait MaybeSendSync {}
+#[doc(hidden)]
+#[cfg(not(feature = "mt"))]
+impl<T> MaybeSendSync for T {}
+
+#[doc(hidden)]
+#[cfg(feature = "mt")]
+pub trait MaybeSync: Sync {}
+#[doc(hidden)]
+#[cfg(feature = "mt")]
+impl<T: Sync> MaybeSync for T {}
+
+#[doc(hidden)]
+#[cfg(not(feature = "mt"))]
+pub trait MaybeSync {}
+#[doc(hidden)]
+#[cfg(not(feature = "mt"))]
+impl<T> MaybeSync for T {}
+
 pub trait BlockLoader<V> {
     // return: potentially more meta blocks in vec
     #[cfg(feature = "mt")]

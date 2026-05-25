@@ -2,11 +2,12 @@
 //!
 //! Gated by #[cfg(not(feature = "sync-api"))] because the helper
 //! BMap APIs are async-only when `sync-api` is off. The batch
-//! lookup path is also gated out under the `mt` feature; this test
-//! therefore is a no-op under `mt` and only runs where the batch
-//! API is actually available.
+//! lookup path is now available under all feature combinations
+//! including `mt`; the marker-trait pattern in src/lib.rs
+//! (MaybeSendSync / MaybeSync) supplies the conditional Send/Sync
+//! bound that read_batch needs there.
 
-#![cfg(all(not(feature = "sync-api"), not(feature = "mt")))]
+#![cfg(not(feature = "sync-api"))]
 
 use std::collections::BTreeMap;
 use std::io::ErrorKind;
