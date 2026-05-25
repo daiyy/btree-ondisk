@@ -12,15 +12,23 @@ Run with `./run_audit.sh miri` and `./run_audit.sh fuzz [secs]`.
 
 ## Current status
 
-Running Miri on the full test suite now passes under both feature
+Running Miri on the full test suite passes under both feature
 configurations:
 
 - **Default (`rc` + tokio-runtime)** via `./run_audit.sh miri`
   - `cargo +nightly miri test --lib` — 1/1
-  - `cargo +nightly miri test --test coverage_boost` — 22/22
+  - `cargo +nightly miri test --test coverage_boost` — 23/23
   - `cargo +nightly miri test --test bmap_tests` — 11/11
+  - `cargo +nightly miri test --test lookup_batch` — 3/3
 - **`arc` + tokio-runtime** via `./run_audit.sh miri-arc`
-  - same three targets, same counts, no UB reported
+  - same four targets, same counts, no UB reported
+
+The `lookup_batch` target was added as part of the 0.18 prefetch
+work and exercises the new batch-cache-fill path
+(`BtreeMap::get_from_nodes_batch`,
+`BtreeMap::do_lookup_batch`, `BMap::lookup_batch`,
+`BMap::lookup_at_level_batch`) plus the `lookup_contig`
+sibling-prefetch path.
 
 cargo-fuzz `btree_node_from_slice` / `direct_node_from_slice` survive
 multi-million inputs; `bmap_read` no longer crashes on malformed input

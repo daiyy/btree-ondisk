@@ -26,6 +26,7 @@ miri_rc() {
     cargo +nightly miri test --lib
     cargo +nightly miri test --test coverage_boost
     cargo +nightly miri test --test bmap_tests
+    cargo +nightly miri test --test lookup_batch
 }
 
 miri_arc() {
@@ -33,6 +34,7 @@ miri_arc() {
     cargo +nightly miri test --no-default-features --features "$feats" --lib
     cargo +nightly miri test --no-default-features --features "$feats" --test coverage_boost
     cargo +nightly miri test --no-default-features --features "$feats" --test bmap_tests
+    cargo +nightly miri test --no-default-features --features "$feats" --test lookup_batch
 }
 
 seed_corpus() {
