@@ -6,6 +6,24 @@
 //!
 //! Individual btree node in the map can be load back from backend storage by [`BlockLoader`].
 //!
+//! # Batch lookup
+//!
+//! For workloads that issue many lookups against a cold cache,
+//! [`bmap::BMap::lookup_batch`] resolves a slice of keys with one
+//! batched backend read per tree level instead of one per key per
+//! level. Loaders that override [`BlockLoader::read_batch`] to fan
+//! out concurrently (e.g. via `futures::future::join_all` or a
+//! native batch GET API) collapse `N × (H − 1)` serial RTTs into
+//! `H − 1` parallel ones.
+//!
+//! [`bmap::BMap::lookup_contig`] performs the same kind of
+//! sibling-leaf prefetch within a single parent on its own. Both
+//! single-key APIs (`lookup`, `lookup_at_level`, `lookup_contig`)
+//! preserve their existing semantics; the batch entry points are
+//! purely additive.
+//!
+//! See `docs/prefetch.md` for the design and measured speedups.
+//!
 //! # Contract for the pointer type `P`
 //!
 //! `BMap` is generic over the child-pointer type `P`. Because the internal
