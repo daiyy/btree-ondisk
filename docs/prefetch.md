@@ -41,15 +41,24 @@ in parallel. Across a whole batch, the critical path shrinks from
 - `tests/lookup_batch.rs` oracle suite cross-checking batch results
   against per-key lookup on 2000-key btrees, on the Direct arm, and
   with duplicated / empty inputs.
+- Sibling-leaf prefetch in `BtreeMap::lookup_contig`. Before the
+  walk loop begins, optimistically issue one
+  `get_from_nodes_batch` for as many right-sibling leaves under the
+  current parent as the requested run length might still need. The
+  walk that follows hits the cache instead of issuing serial loader
+  reads. Best-effort; semantics unchanged.
 
 ### What this prototype does NOT address (deliberate non-goals)
 
 - **Single-lookup I/O parallelisation.** As discussed above, the
   `next_level_id` data dependency rules this out without speculation,
   which v1 does not attempt.
-- **Scan / range prefetch.** `seek_key` / `lookup_contig` walks don't
-  use the batch API and still run serially. The speculation needed to
-  prefetch the next sibling leaf is future work.
+- **Scan / range prefetch.** `lookup_contig` now performs sibling
+  prefetch within the current parent (see "Sibling prefetch in
+  lookup_contig" below). Speculation across parent boundaries and
+  prefetch in `seek_key` are still future work — the existing
+  `lookup_contig` loop never crosses a parent so cross-parent
+  prefetch needs a deeper restructuring of that walk.
 - **Loader-hinted prefetch.** `read` does not gain a PrefetchHint
   argument. Loaders that want to side-load neighbours continue to do
   so via the existing `more: Vec<(V, Vec<u8>)>` return value, which
@@ -198,11 +207,39 @@ levels = ~695 single reads for the size-128 row), while the batch
 path issues exactly one `read_batch` per level per iteration
 (15 = 5 iters × 3 levels).
 
+### Sibling prefetch in lookup_contig
+
+The same SlowLoader fixture, with the `CONTIG_LENGTHS` table the
+bench now prints. For each `run_length`, `lookup_contig(0, n)` is
+issued against a cold cache (`set_cache_limit(1)` before each
+sample). Numbers are the median of 5 iterations.
+
+| run_length | no prefetch | with prefetch | speedup |
+|-----------:|------------:|--------------:|--------:|
+|          1 |     2.15 ms |       2.15 ms |   1.00× |
+|         64 |     6.45 ms |       3.24 ms |   1.99× |
+|        256 |    18.21 ms |       3.24 ms |   5.62× |
+|       1024 |    19.16 ms |       3.24 ms |   5.92× |
+|       2048 |    18.18 ms |       3.24 ms |   5.61× |
+
+The contig wall time stays flat past `run_length=64` because the
+existing `lookup_contig` loop never crosses a parent boundary;
+`got=225` is `15 leaves × 15 keys/leaf`, a full parent's worth at
+`meta=256`. Crossing parents is left to v2 (see Future work).
+
+Loader counters confirm the mechanism. With prefetch every
+`lookup_contig` call issues exactly one batched read covering up
+to 14 sibling ids; without prefetch each sibling triggers its own
+serial read, giving `reads = 16/iter` and the linear-with-leaves
+serial profile above. The "no prefetch" column was produced by
+temporarily reverting commit `bc39039` and re-running the bench.
+
 ### Feature matrix
 
 `run_tests.sh` passes on all four existing configurations (rc/arc ×
 async/sync-api). Additional builds verified for
-`arc + tokio-runtime + mt` (the batch API is gated out there).
+`arc + tokio-runtime + mt` (the batch API and `lookup_contig`
+prefetch are both gated out there).
 
 ## Commits
 
@@ -214,6 +251,9 @@ async/sync-api). Additional builds verified for
 5. `08a083a` — `tests/lookup_batch.rs` oracle suite.
 6. `2afa7a0` — `examples/lookup_batch_bench.rs` + `SlowLoader`.
 7. `9bfbd10` — this document.
+8. `bc39039` — sibling-leaf prefetch in `lookup_contig`.
+9. `a323c66` — extend `lookup_batch_bench` with `lookup_contig`
+   measurements.
 
 ## Future work (not in this PR)
 
@@ -221,8 +261,12 @@ async/sync-api). Additional builds verified for
   local-file loader) and re-running the bench against actual RTT.
 - Lifting the `mt`-feature restriction, once the Send/Sync
   retrofit work is justified by a concrete need.
-- Range/scan prefetch via speculation on the next-sibling id.
-  `seek_key`/`lookup_contig` could be rewritten on top of this
-  plumbing once the basic shape is comfortable.
+- Range/scan prefetch beyond the current parent's sibling window.
+  v1 only prefetches sibling leaves under the same parent in
+  `lookup_contig`. The walk loop itself returns at the parent
+  boundary (= 225 entries at `meta=256`). Extending past that
+  boundary requires walking up to a higher-level parent and then
+  re-descending, plus prefetching the new parent's first leaves;
+  not done here.
 - Batched `NodeCache` / tiered-cache path, if the per-id `load`
   call ever shows up as material in a profile.
