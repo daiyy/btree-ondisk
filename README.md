@@ -16,6 +16,26 @@ NILFS2 is a log-structured file system implementation for the Linux kernel.
 
 See [examples](examples/) for how to use.
 
+## Batch lookup
+
+`BMap::lookup_batch(&[K])` resolves a slice of keys in a single tree
+walk that issues one batched backend read per tree level instead of
+one per key per level. On loaders that override
+[`BlockLoader::read_batch`] to actually fan out reads (e.g. via
+`futures::future::join_all`), this collapses `N × (H − 1)` serial
+RTTs into `H − 1` parallel ones. `BMap::lookup_contig` performs the
+same kind of sibling-leaf prefetch within its parent.
+
+```rust
+let results: Vec<std::io::Result<V>> = bmap.lookup_batch(&keys).await;
+```
+
+Existing single-key APIs (`lookup`, `lookup_at_level`,
+`lookup_contig`) are unchanged. See [docs/prefetch.md](docs/prefetch.md)
+for the design and measured speedups (~48× at batch_size=128 against
+a 100 µs-per-read backend; ~5.9× for `lookup_contig` over the
+full sibling-prefetch window).
+
 ## Testing & Audit
 
 Functional tests:
