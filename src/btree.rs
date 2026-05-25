@@ -1908,6 +1908,57 @@ impl<'a, K, V, P, L, C> VMap<K, V> for BtreeMap<'a, K, V, P, L, C>
         let maxlevel = self.get_height() - 1;
         let mut node = path.get_nonroot_node(level);
         let mut index = path.get_index(level) + 1;
+
+        // ----------------- best-effort sibling prefetch -----------------
+        //
+        // Without prefetch, every right-sibling step in the walk below
+        // does a serial `await get_from_nodes(v)` against the loader. For
+        // a `lookup_contig` that spans several leaves under the same
+        // parent that's `(L - 1)` serial RTTs where `L` is the number of
+        // leaves involved.
+        //
+        // We can avoid that by issuing one `get_from_nodes_batch` up
+        // front for as many sibling leaves as we might still need. The
+        // upper bound on extra leaves is
+        //   ceil((maxblocks - remaining_in_first_leaf) / leaf_capacity)
+        // capped by what's actually present under the current parent.
+        // Sibling leaves under a *different* parent are intentionally
+        // not prefetched here — that case is rare and would require a
+        // deeper traversal of the parent chain that doesn't fit cleanly
+        // into the existing path-based loop below.
+        //
+        // The prefetch is best-effort: any error is swallowed so the
+        // observable behaviour of `lookup_contig` is identical to the
+        // un-prefetched path. If prefetch did fail to populate the
+        // cache, the loop below will hit the loader on its own.
+        #[cfg(not(feature = "mt"))]
+        {
+            if level < maxlevel {
+                let p_node = self.get_node(&path, level + 1);
+                let p_index = path.get_index(level + 1);
+                let p_nchild = p_node.get_nchild();
+                if p_index + 1 < p_nchild {
+                    let leaf_cap = node.get_capacity().max(1);
+                    let remaining_in_first =
+                        node.get_nchild().saturating_sub(index);
+                    let need_more =
+                        maxblocks.saturating_sub(remaining_in_first + count);
+                    let need_leaves = need_more.div_ceil(leaf_cap);
+                    let avail = p_nchild - (p_index + 1);
+                    let prefetch_n = need_leaves.min(avail);
+                    if prefetch_n > 0 {
+                        let mut ids: Vec<P> = Vec::with_capacity(prefetch_n);
+                        for i in 0..prefetch_n {
+                            ids.push(*p_node.get_val::<P>(p_index + 1 + i));
+                        }
+                        // best-effort: ignore prefetch errors
+                        let _ = self.get_from_nodes_batch(&ids).await;
+                    }
+                }
+            }
+        }
+        // ----------------- end prefetch ---------------------------------
+
         loop {
             while index < node.get_nchild() {
                 if count == maxblocks {
