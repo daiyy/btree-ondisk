@@ -1,5 +1,118 @@
 # Changelog
 
+## 0.18.0
+
+Theme: lookup latency. The internal `get_from_nodes` hot path is
+faster; a new public batch lookup API folds N × (H − 1) serial
+backend reads into (H − 1) parallel batched reads on loaders that
+implement `BlockLoader::read_batch` concurrently;
+`BMap::lookup_contig` performs sibling-leaf prefetch within its
+parent. Existing single-key APIs are unchanged.
+
+### Added
+
+- **`BlockLoader::read_batch`** — new trait method with a default
+  sequential fallback that loops `read`. Existing `BlockLoader`
+  implementations compile and behave unchanged. Loaders that want
+  real concurrency override the method (see
+  `examples/lookup_batch_bench.rs::SlowLoader` for a
+  `futures::future::join_all` pattern).
+- **`BMap::lookup_batch(&[K]) -> Vec<Result<V>>`** and
+  **`BMap::lookup_at_level_batch(&[K], usize) -> Vec<Result<V>>`** —
+  new public batch lookup APIs. Per-key NotFound is reported inside
+  the `Vec`; a whole-batch failure is fanned out to one `Err` per
+  input so the result's shape is stable. Available on every feature
+  combination including `mt` (see "Internal" below for the marker
+  trait technique used to forward Send/Sync bounds without
+  duplicating `BtreeMap`'s impl block).
+- Sibling-leaf prefetch in **`BMap::lookup_contig`**. Before the
+  walk loop begins, one `get_from_nodes_batch` issues for as many
+  right-sibling leaves under the current parent as the requested
+  run length might still need. Best-effort; semantics unchanged
+  even on loader failure. Gated out under `mt`.
+- New benches and examples covering this work:
+  `examples/lookup_bench.rs` (classic vs. branchless vs. AVX2 SIMD
+  in-node lookup), `examples/get_from_nodes_bench.rs` (the
+  pre-existing `get_from_nodes` baseline), and
+  `examples/lookup_batch_bench.rs` with a `SlowLoader` wrapper that
+  injects per-read delays to make backend RTT visible (and a
+  `lookup_contig` section).
+- `tests/lookup_batch.rs` cross-checks `lookup_batch` results
+  against per-key `lookup` and a `std::collections::BTreeMap`
+  oracle, and pins the regression for the audit finding below.
+- `fuzz/fuzz_targets/bmap_lookup_batch.rs` — fifth libFuzzer
+  target. Seeded regression input lives at
+  `fuzz/seeds/bmap_lookup_batch/regression_invalid_first_leaf_id`.
+- `docs/prefetch.md` — full design write-up: motivation, scope,
+  conditional-bound trait pattern, measurements, future work.
+
+### Performance
+
+- `BtreeMap::get_from_nodes` hot path is split into a `#[inline]`
+  cache-probe and a `#[cold]` async miss helper. Cache-hit lookups
+  no longer carry the miss path's async-state-machine setup cost.
+- The miss path skips the previous full `alloc_zeroed` of the
+  meta-node buffer and only zeroes the 8-byte `NodeHeader` prefix
+  needed for `from_raw_ptr` to classify the node. Loader-side
+  reads still overwrite the entire buffer before the node is
+  published.
+- `BMap::lookup_batch` collapses N × (H − 1) serial loader RTTs
+  into (H − 1) parallel ones. Measured under `lookup_batch_bench`
+  with a 100 µs synthetic per-read delay: 1.0× speedup at
+  `batch_size=1`, 3.3× at 8, 12.7× at 32, 47.8× at 128.
+- `BMap::lookup_contig` sibling prefetch collapses the within-parent
+  serial sibling reads into one batched read. Measured under
+  `lookup_batch_bench`: 1.99× at `run_length=64`, 5.62×–5.92× for
+  larger run lengths up to the parent boundary.
+
+### Fixed
+
+- `BtreeMap::do_lookup_batch` no longer short-circuits to NotFound
+  when a child id happens to equal `NodeValue::invalid_value()`.
+  The single-key `do_lookup` does not check `is_invalid()` either:
+  `BMap::convert_and_insert` legitimately initialises the very
+  first leaf with `last_seq == 0`, which equals `invalid_value()`
+  for `u64`. The earlier guard in the batch path caused
+  `lookup_batch` to return NotFound for a key the corresponding
+  single-key `lookup` would resolve. Found by the new
+  `bmap_lookup_batch` fuzz target on its first 30-second run;
+  recorded as audit finding 7. Regression test:
+  `tests/lookup_batch.rs::lookup_batch_resolves_invalid_first_leaf_id`.
+
+### Internal
+
+- New `pub(crate)` `MaybeSendSync` / `MaybeSync` marker traits in
+  `src/lib.rs`, blanket-implemented for any `T` under non-`mt`
+  features and gated to `Send + Sync` / `Sync` under `mt`. The
+  batch entry points use them as method-level `where` clauses,
+  letting the new APIs forward `BlockLoader::read_batch`'s
+  conditional Send/Sync requirements without modifying the main
+  `BtreeMap` impl block. The `lookup_contig` prefetch path remains
+  gated under `mt` because trait method bodies cannot add their
+  own `where` clauses; lifting that would force the marker bounds
+  onto every `BMap` method delegating into `VMap`.
+- `docs/audit.md` updated for the 0.18 cycle. Miri covers all four
+  test files (lib, coverage_boost, bmap_tests, lookup_batch) under
+  both `rc` and `arc` feature sets. `fuzz-quick` and `fuzz-arc`
+  runs across all five targets are clean.
+- `README.md` and the crate-level rustdoc in `src/lib.rs` advertise
+  the new batch API.
+- Three clippy lints introduced by this cycle's new examples were
+  cleaned up. Pre-existing lints in `src/bmap.rs` under the
+  `sync-api` feature, and pre-existing example/Cargo.toml
+  configuration issues for `examples/mt-{rc,arc}-sync-api`, are
+  unchanged and out of scope.
+
+### Compatibility
+
+- No breaking changes. Every existing public API (`BMap::lookup`,
+  `lookup_at_level`, `lookup_contig`, `insert`, `delete`,
+  `seek_key`, `BlockLoader::read`, `BlockLoader::dup_from_new_path`,
+  every `NodeCache` method) keeps the exact signature and
+  observable behaviour from 0.17.0. Existing `BlockLoader`
+  implementations do not need to add `read_batch` (default
+  fallback is provided).
+
 ## 0.17.0
 
 ### Breaking
