@@ -1005,18 +1005,22 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         }
         let mut index = nchild - 1;
         let mut level = node.get_level();
-        let mut value = node.get_val(index);
         path.set_nonroot_node_none(level);
         path.set_index(level, index);
 
-        level -= 1;
-        while level > 0 {
-            node = self.get_from_nodes(value).await?;
+        // Walk down the rightmost spine. Each step reads the current
+        // (internal) node's rightmost P slot and loads the child.
+        // Leaf-level handling lives outside the loop because a leaf
+        // node has no P slots — reading one through get_val<P> tripped
+        // the 0.17 size assert (commit c084ddb) when V != P, even
+        // though the value was a dead read in the original code.
+        while level > BTREE_NODE_LEVEL_LEAF {
+            let value: P = *node.get_val(index);
+            node = self.get_from_nodes(&value).await?;
+            level -= 1;
             index = node.get_nchild() - 1;
-            value = node.get_val(index);
             path.set_nonroot_node(level, node.clone());
             path.set_index(level, index);
-            level -= 1;
         }
         let key = node.get_key(index);
         Ok(*key)
