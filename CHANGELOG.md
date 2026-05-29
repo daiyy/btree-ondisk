@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.18.1
+
+Theme: V != P correctness. Three latent bugs along the convert /
+lookup_last / delete paths -- silently broken in 0.16 and earlier,
+exposed as panics by 0.17's added safety checks (commits f9ba42c
+and c084ddb) -- prevented `BMap` from being used with a value type
+`V` that is much larger than the pointer type `P` (e.g.
+`K=u64`, `V=400-byte struct`, `P=u64` with a 56-byte inline root,
+as Hyperfile's directory index requires). All three are now fixed
+with minimal, non-breaking changes.
+
+### Fixed
+
+- `BtreeNode::from_raw_ptr` no longer rejects buffers whose
+  capacity-by-V works out to zero. The 0.17 safeguard against
+  zero-capacity nodes was an over-rejection: the existing
+  `nchildren <= capacity` check already covers every unsafe input
+  the original commit cited (which all require `nchildren > 0` to
+  misbehave). `BMap::convert_and_insert`'s big-V split path
+  intentionally builds a transient `LEAF | LARGE` root with
+  capacity == 0 and nchildren == 0 before reshaping it into an
+  internal root via `do_reinit::<P>`; that path is reachable
+  again. Existing fuzz coverage still catches `nchildren > 0 +
+  capacity == 0` inputs.
+- `BtreeMap::do_lookup_last` no longer issues a dead
+  `get_val::<P>` read on the leaf at the bottom of the rightmost
+  spine. The walk now `while level > LEAF` over internal levels
+  only, and reads the leaf's last key directly via `get_key`
+  outside the loop. This also prevents the same size assert from
+  firing on the leaf-root + V != P shape (small V, large root
+  buffer).
+- `BtreeMap::prepare_delete` records the leaf level's `oldseq`
+  via `node.id()` (the node's own block id) instead of
+  `*node.get_val(dindex)` (which read a V slot through P). The
+  rollback semantics demanded by the field require a P-typed
+  value that is actually a block id; only `id` provides that on a
+  leaf. Internal-level and root-level entries continue to use
+  `*node.get_val(dindex)` (well-defined: a child's P slot inside
+  an internal node).
+
+### Tests
+
+- New `tests/bigvalue.rs` regression suite (`K=u64`, `V=432-byte
+  Big`, `P=u64`, 56-byte root) covering `insert + lookup`,
+  `insert × 8 + last_key`, and `insert × 40 + lookup × 40 +
+  last_key + delete × 40`. The third case exercises the borrow /
+  concat / shrink propagation that prepare_delete drives.
+- `tests/coverage_boost.rs::btree_node_zero_capacity_is_legal`
+  flips the previous `_rejects_zero_capacity` assertion to match
+  the new (and 0.16-era) behaviour.
+
+### Compatibility
+
+No public API change. No feature flag change. No semantic change
+for existing callers where `V` and `P` are size-equivalent (every
+0.18.0 user). Callers with `V != P` now work where 0.17.0 / 0.18.0
+panicked.
+
 ## 0.18.0
 
 Theme: lookup latency. The internal `get_from_nodes` hot path is
