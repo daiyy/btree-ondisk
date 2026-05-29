@@ -248,11 +248,6 @@ impl<'a, K, V, P> BtreeNode<'a, K, V, P>
             std::mem::size_of::<P>()
         };
         let capacity = (len - hdr_size) / (key_size + val_size);
-        if capacity == 0 {
-            return Err(Error::new(ErrorKind::InvalidInput,
-                format!("buffer size {} too small to hold a btree node header plus one {}-byte slot",
-                    len, key_size + val_size)));
-        }
         if capacity < (*header).nchildren as usize {
             return Err(Error::new(ErrorKind::InvalidData,
                 format!("nchildren in header is larger than its capacity {} > {}", (*header).nchildren, capacity)));

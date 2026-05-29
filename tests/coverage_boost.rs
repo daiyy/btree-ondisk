@@ -267,10 +267,17 @@ fn btree_node_new_copy_from_slice() {
 }
 
 #[test]
-fn btree_node_rejects_zero_capacity() {
-    // 8-byte header leaves 0 bytes for slots — capacity would be 0. Reject.
-    assert!(BtreeNode::<u64, u64, u64>::new(8).is_none());
-    assert!(BtreeNode::<u64, u64, u64>::copy_from_slice(0u64, &[0u8; 8]).is_none());
+fn btree_node_zero_capacity_is_legal() {
+    // capacity == 0 + nchildren == 0 is a legitimate transient state for
+    // BMap roots where V is much larger than the inline root buffer (e.g.
+    // a 56-byte root with a 432-byte V). The root is born this way and is
+    // immediately reinit'd to internal flags via do_reinit::<P> in
+    // convert_and_insert. The remaining capacity-vs-nchildren check still
+    // catches the unsafe configurations (capacity == 0 with nchildren > 0
+    // would let insert/delete operate out of bounds), so accepting the
+    // zero-capacity-zero-nchildren case is sound.
+    assert!(BtreeNode::<u64, u64, u64>::new(8).is_some());
+    assert!(BtreeNode::<u64, u64, u64>::copy_from_slice(0u64, &[0u8; 8]).is_some());
     // A full 16-byte pair (K=u64+V=u64) fits at size >= 24.
     assert!(BtreeNode::<u64, u64, u64>::new(24).is_some());
 }
