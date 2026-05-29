@@ -1120,7 +1120,18 @@ impl<'a, K, V, P, L, C> BtreeMap<'a, K, V, P, L, C>
         let mut dindex = path.get_index(level);
         for _ in BTREE_NODE_LEVEL_MIN..self.get_root_level() {
             let node = path.get_nonroot_node(level);
-            path.set_old_seq(level, *node.get_val(dindex));
+            // oldseq[level] = the current block id of this level's node,
+            // recorded so a future transaction layer can roll back to it
+            // if a new id allocated during this delete fails to persist.
+            // The previous `*node.get_val(dindex)` read this layer's
+            // V slot through P (and on the leaf, panicked under 0.17's
+            // size assert in get_val<X> when V != P), which doesn't
+            // match the rollback semantics of "this level's own id".
+            // The root-level set_old_seq calls below intentionally keep
+            // the *root.get_val(dindex) form: there the semantics is
+            // "the id of the soon-to-be-shrunk-or-deleted root child"
+            // (a P slot inside an internal root), which is well-defined.
+            path.set_old_seq(level, *node.id());
 
             if node.is_overflowing() {
                 path.set_op(level, BtreeMapOp::Delete);
