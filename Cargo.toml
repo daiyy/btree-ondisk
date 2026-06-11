@@ -48,3 +48,13 @@ path = "examples/mt-rc.rs"
 name = "mt-arc"
 path = "examples/mt-arc.rs"
 required-features = ["arc"]
+
+[[example]]
+name = "mt-rc-sync-api"
+path = "examples/mt-rc-sync-api.rs"
+required-features = ["sync-api"]
+
+[[example]]
+name = "mt-arc-sync-api"
+path = "examples/mt-arc-sync-api.rs"
+required-features = ["sync-api", "arc"]
