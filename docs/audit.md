@@ -19,9 +19,11 @@ configurations:
   - `cargo +nightly miri test --lib` — 1/1
   - `cargo +nightly miri test --test coverage_boost` — 23/23
   - `cargo +nightly miri test --test bmap_tests` — 11/11
-  - `cargo +nightly miri test --test lookup_batch` — 3/3
+  - `cargo +nightly miri test --test lookup_batch` — 4/4
+  - `cargo +nightly miri test --test bigvalue` — 3/3
+  - `cargo +nightly miri test --test node_id` — 3/3
 - **`arc` + tokio-runtime** via `./run_audit.sh miri-arc`
-  - same four targets, same counts, no UB reported
+  - same six targets, same counts, no UB reported
 
 The `lookup_batch` target was added as part of the 0.18 prefetch
 work and exercises the new batch-cache-fill path
@@ -29,6 +31,22 @@ work and exercises the new batch-cache-fill path
 `BtreeMap::do_lookup_batch`, `BMap::lookup_batch`,
 `BMap::lookup_at_level_batch`) plus the `lookup_contig`
 sibling-prefetch path.
+
+`bigvalue` covers the `V != P` shapes fixed in 0.18.1 (a root buffer
+too small to hold one `(K, V)` slot, leaf-level reads that must not go
+through `get_val::<P>`).
+
+`node_id` covers the caller-driven node placement protocol
+(`BMap::lookup_dirty` / `BtreeNodeDirty::id` /
+`BMap::assign_meta_node`), including reassigning a node to the pointer
+it already occupies. Miri is load-bearing here: an earlier draft of
+`BtreeNodeDirty::id` returned `&P` borrowed out of the node's
+`Cell<P>`, and Miri reported a Stacked-Borrows violation when the
+reference was held across the `Cell::set` inside `assign_meta_node`
+(read through a `SharedReadOnly` tag invalidated by a later `Unique`
+retag) — invisible in a normal build, where the read merely returned
+the pre-existing value. Returning `P` by value removes the hazard
+entirely; see finding 8.
 
 cargo-fuzz `btree_node_from_slice` / `direct_node_from_slice` survive
 multi-million inputs; `bmap_read` no longer crashes on malformed input
@@ -80,6 +98,20 @@ after its signature was changed to return `Result` (see finding 6).
    `tests/lookup_batch.rs::lookup_batch_resolves_invalid_first_leaf_id`
    and a regression seed at
    `fuzz/seeds/bmap_lookup_batch/regression_invalid_first_leaf_id`.
+8. **`BtreeNodeDirty::id` would have handed out a `Cell` interior
+   borrow** — the accessor added to let callers place a node back at
+   the pointer it already occupies was first drafted as
+   `pub fn id(&self) -> &P`, mirroring `BtreeNode::id`. `BtreeNode`
+   stores the pointer in a `Cell<P>` and produces the reference via
+   `unsafe { &*self.id.as_ptr() }`, while `BMap::assign_meta_node`
+   writes that same cell through `set_id`. The natural flush loop —
+   read `id()`, then assign — therefore holds a `SharedReadOnly` tag
+   across a `Unique` retag, and reading through it afterwards is UB.
+   Miri flagged it; a normal build did not, because the read returned
+   the value the cell already held. Fixed before release by returning
+   `P` by value, which makes the misuse unrepresentable rather than
+   merely documented. Covered by `tests/node_id.rs` under both Miri
+   feature sets.
 
 ## Open findings
 

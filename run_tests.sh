@@ -8,10 +8,13 @@ run() {
 }
 
 # default (rc + tokio-runtime), async API
-run cargo test --test bmap_tests --test coverage_boost
+run cargo test --test bmap_tests --test coverage_boost \
+    --test bigvalue --test lookup_batch --test node_id
 
 # arc + tokio-runtime, async API
-run cargo test --no-default-features --features arc,value-check,tokio-runtime --test bmap_tests --test coverage_boost
+run cargo test --no-default-features --features arc,value-check,tokio-runtime \
+    --test bmap_tests --test coverage_boost \
+    --test bigvalue --test lookup_batch --test node_id
 
 # rc + sync-api
 run cargo test --features sync-api --test sync_smoke
