@@ -1,5 +1,107 @@
 # Changelog
 
+## 0.19.0
+
+Theme: caller-driven node placement. A caller that places nodes
+itself can now write a dirty node back to the pointer it already
+occupies, instead of being forced to consume a fresh pointer on every
+flush and leave the previous location unreclaimable.
+
+### Added
+
+- **`BtreeNodeDirty::id() -> P`** — the pointer a dirty node
+  currently occupies. `BtreeNode::id()` was already public and `node`
+  is already an exported module; the missing link was reaching the
+  node from a `BtreeNodeDirty`, whose `clone_node_ref()` is
+  `pub(crate)`.
+
+  Intended for the `lookup_dirty` / `assign_meta_node` protocol:
+
+  ```rust
+  for n in bmap.lookup_dirty() {
+      let cur = n.id();
+      let off = if cur.is_valid_extern_assign() { cur } else { allocate()? };
+      bmap.assign_meta_node(off, n.clone()).await?;
+      write(off, n.as_slice())?;
+  }
+  ```
+
+  Without it, every flush had to assign a fresh pointer to every dirty
+  node, so the location the previous version occupied was
+  unidentifiable and therefore unreclaimable. On a local block device
+  that is a space leak; on a log-structured object store it prevents
+  reclamation outright, because a node written to a fresh offset is
+  never overwritten, its mapping never goes away, and the segment it
+  landed in stays referenced forever. Writing the node back to its
+  existing offset makes the write an overwrite of that logical
+  address, and the storage holding the old version immediately loses
+  its last reference.
+
+  **Choosing the destination.** A node that has never been placed
+  carries an *internal sequence number*, not `invalid_value()`, so
+  discriminate with `NodeValue::is_valid_extern_assign()`. Using
+  `is_invalid()` reports `false` for those sequence numbers and hands
+  one back as though it were a storage location — rejected by
+  `assign_meta_node` under the (default) `value-check` feature,
+  silently accepted without it.
+
+  **Assigning a node to its current pointer is a supported no-op.**
+  The parent's child pointer is rewritten with the value it already
+  held; no short-circuit is required for correctness.
+
+  Returns `P` by value rather than `&P` deliberately — see Audit.
+
+### Fixed
+
+- `cargo clippy` / `cargo test --all-targets` now compile under
+  default features. `mt-rc-sync-api` / `mt-arc-sync-api` are written
+  for the `sync-api` feature but declared no `required-features`, so
+  Cargo built them as async and failed; and `examples/mt.rs` is a
+  shared helper module with no `main` that Cargo nevertheless
+  auto-discovered as an example. The helper moved to
+  `examples/mt/mod.rs` (not auto-discovered); `mod mt;` consumers
+  resolve it unchanged.
+
+### Audit
+
+- `BtreeNodeDirty::id()` returns `P` by value, not `&P`, and the
+  distinction is load-bearing rather than stylistic. `BtreeNode`
+  stores the pointer in a `Cell<P>` and produces references through
+  `unsafe { &*self.id.as_ptr() }`, while `assign_meta_node` writes
+  that same cell via `set_id`. The natural flush loop — read `id()`,
+  then assign — would hold a `SharedReadOnly` tag across a `Unique`
+  retag and read through it afterwards. Miri reports that as
+  Undefined Behavior; a normal build does not, because the read
+  returns the value the cell already held. Returning by value makes
+  the misuse unrepresentable instead of merely documented. Recorded
+  as audit finding 8 in `docs/audit.md`.
+- Miri coverage grew from four targets to six: `bigvalue` (added in
+  0.18.1 but never registered) and `node_id` now run under both `rc`
+  and `arc`, alongside `--lib`, `coverage_boost`, `bmap_tests` and
+  `lookup_batch`. All pass with no UB reported.
+- `run_tests.sh` and `run_audit.sh` enumerate their targets
+  explicitly, so a new `tests/*.rs` file does not run until listed.
+  `bigvalue` was unregistered in both and `lookup_batch` was missing
+  from the functional matrix, so neither ran across the feature
+  combinations they were written to protect. Both are now registered.
+
+### Tests
+
+- New `tests/node_id.rs` pins: an unplaced node reports an internal
+  sequence number and never claims an external pointer; reusing the
+  reported pointer keeps every key readable while an overwrite-only
+  flush consumes no new pointer at all; and assigning a node back to
+  its current pointer is idempotent. Verified against mutation —
+  forcing always-fresh placement fails the growth assertion, and
+  substituting `is_invalid()` as the discriminator fails two of the
+  three tests.
+
+### Compatibility
+
+Additive. No existing signature or behaviour changes: every 0.18.1
+public API keeps its shape, no feature flags were added or altered,
+and callers that ignore `BtreeNodeDirty::id()` are unaffected.
+
 ## 0.18.1
 
 Theme: V != P correctness. Three latent bugs along the convert /
