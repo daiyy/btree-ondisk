@@ -38,6 +38,49 @@ impl<'a, K, V, P> BtreeNodeDirty<'a, K, V, P>
         self.0.clone()
     }
 
+    /// The pointer this node currently occupies.
+    ///
+    /// Callers that place nodes themselves (the [`lookup_dirty`] /
+    /// [`assign_meta_node`] protocol) use this to write a node back to the
+    /// location it already occupies instead of always consuming a fresh one.
+    /// Reusing the current location turns the write into an overwrite of that
+    /// logical address, which lets the storage backing the previous version be
+    /// reclaimed; always assigning a fresh pointer leaves the old location
+    /// referenced forever and therefore unreclaimable.
+    ///
+    /// Returns the pointer by value rather than by reference: the node stores
+    /// it in a `Cell`, and [`assign_meta_node`] overwrites that cell, so a
+    /// borrow held across the assignment would be invalidated.
+    ///
+    /// # Distinguishing a placed node from a new one
+    ///
+    /// A node that has never been assigned an external pointer carries an
+    /// **internal sequence number** instead, so test with
+    /// [`NodeValue::is_valid_extern_assign`] — *not* with
+    /// [`NodeValue::is_invalid`], which reports `false` for those internal
+    /// sequence numbers and would hand one back as though it were a storage
+    /// location:
+    ///
+    /// ```ignore
+    /// for n in bmap.lookup_dirty() {
+    ///     let cur = n.id();
+    ///     let off = if cur.is_valid_extern_assign() { cur } else { allocate()? };
+    ///     bmap.assign_meta_node(off, n.clone()).await?;
+    ///     write(off, n.as_slice())?;
+    /// }
+    /// ```
+    ///
+    /// Assigning a node back to its current pointer is a supported no-op: the
+    /// parent's child pointer is rewritten with the value it already held.
+    ///
+    /// [`lookup_dirty`]: crate::bmap::BMap::lookup_dirty
+    /// [`assign_meta_node`]: crate::bmap::BMap::assign_meta_node
+    /// [`NodeValue::is_valid_extern_assign`]: crate::NodeValue::is_valid_extern_assign
+    /// [`NodeValue::is_invalid`]: crate::NodeValue::is_invalid
+    pub fn id(&self) -> P {
+        *self.0.as_ref().id()
+    }
+
     pub fn size(&self) -> usize {
         // rc/arc -> box -> inner slice -> len
         self.0.as_ref().as_u8_ref().len()
